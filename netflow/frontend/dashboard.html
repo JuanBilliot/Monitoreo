@@ -1,0 +1,1488 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitor de Servidores | Dashboard</title>
+    
+    <!-- Estilos directos -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.2.96/css/materialdesignicons.min.css" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        :root {
+            --color-background: #0f172a;
+            --color-surface: #1e293b;
+            --color-primary: #3b82f6;
+            --color-text: #f8fafc;
+        }
+        
+        body {
+            background-color: var(--color-background);
+            color: var(--color-text);
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .bg-surface {
+            background-color: var(--color-surface);
+        }
+        
+        .bg-primary, .text-primary {
+            background-color: var(--color-primary);
+            color: var(--color-primary);
+        }
+    </style>
+</head>
+<body class="h-full">
+    <div class="h-screen w-screen flex">
+        <!-- Sidebar -->
+        <aside class="w-64 bg-surface border-r border-slate-700">
+            <div class="h-full flex flex-col">
+                <div class="flex items-center justify-center h-16 bg-primary">
+                    <h1 class="text-white font-bold text-xl">Monitor</h1>
+                </div>
+                <div class="p-4 flex flex-col flex-grow overflow-y-auto">
+                    <div class="mb-6">
+                        <h3 class="text-xs uppercase tracking-wider text-slate-400 mb-3">Panel</h3>
+                        <nav>
+                            <a href="#" class="flex items-center p-2 rounded-lg text-white bg-slate-700 mb-1">
+                                <i class="mdi mdi-view-dashboard-outline mr-3"></i>
+                                Dashboard
+                            </a>
+                            <a href="#" class="flex items-center p-2 rounded-lg text-slate-400 hover:bg-slate-700 mb-1">
+                                <i class="mdi mdi-server-network mr-3"></i>
+                                Servidores
+                            </a>
+                            <a href="#" class="flex items-center p-2 rounded-lg text-slate-400 hover:bg-slate-700 mb-1">
+                                <i class="mdi mdi-chart-line mr-3"></i>
+                                Métricas
+                            </a>
+                            <a href="#" class="flex items-center p-2 rounded-lg text-slate-400 hover:bg-slate-700 mb-1">
+                                <i class="mdi mdi-bell-outline mr-3"></i>
+                                Alertas
+                            </a>
+                        </nav>
+                    </div>
+                </div>
+                <div class="p-4 border-t border-slate-700">
+                    <div class="flex items-center mb-4">
+                        <div class="h-8 w-8 rounded-full bg-primary flex items-center justify-center text-white font-semibold mr-3">
+                            U
+                        </div>
+                        <div>
+                            <p class="font-medium" id="user-display">Usuario</p>
+                            <p class="text-xs text-slate-400">Administrador</p>
+                        </div>
+                    </div>
+                    <button onclick="cerrarSesion()" class="w-full flex items-center justify-center p-2 rounded-lg text-slate-400 hover:bg-slate-700">
+                        <i class="mdi mdi-logout mr-2"></i>
+                        Cerrar Sesión
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Contenido principal -->
+        <main class="flex-1 flex flex-col overflow-hidden">
+            <header class="h-16 bg-surface border-b border-slate-700 flex items-center justify-between px-6">
+                <h2 class="text-lg font-semibold">Dashboard</h2>
+                <div class="flex items-center space-x-4">
+                    <div class="text-sm text-slate-400" id="fecha-actual"></div>
+                </div>
+            </header>
+            <div class="flex-1 overflow-auto p-6">
+                <!-- Vista Kanban de Servidores -->
+                <div class="mb-6">
+                    <h3 class="text-xl font-bold mb-4 flex items-center">
+                        <i class="mdi mdi-view-dashboard-outline mr-2 text-primary"></i>
+                        Servidores
+                        <button id="add-server-btn" class="ml-auto bg-primary hover:bg-blue-600 text-white px-3 py-1 rounded-lg flex items-center">
+                            <i class="mdi mdi-plus mr-1"></i>
+                            Agregar servidor
+                        </button>
+                    </h3>
+                    <div id="servers-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        <!-- Las tarjetas de servidores se insertarán aquí -->
+                    </div>
+                </div>
+                
+                <!-- Vista detallada del servidor (oculta por defecto) -->
+                <div id="server-detail" class="hidden bg-surface rounded-xl p-6 shadow-lg mt-4">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 id="detail-title" class="text-xl font-bold">Detalles del Servidor</h3>
+                        <button id="close-detail" class="p-2 rounded-full hover:bg-slate-700">
+                            <i class="mdi mdi-close"></i>
+                        </button>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- Pestañas para diferentes tipos de métricas -->
+                        <div class="mb-6">
+                            <div class="flex border-b">
+                                <button id="tab-network" class="py-2 px-4 text-blue-500 border-b-2 border-blue-500 font-medium" onclick="cambiarTab('network')">
+                                    Red
+                                </button>
+                                <button id="tab-cpu" class="py-2 px-4 text-gray-600 font-medium" onclick="cambiarTab('cpu')">
+                                    CPU
+                                </button>
+                                <button id="tab-memory" class="py-2 px-4 text-gray-600 font-medium" onclick="cambiarTab('memory')">
+                                    Memoria
+                                </button>
+                                <button id="tab-disk" class="py-2 px-4 text-gray-600 font-medium" onclick="cambiarTab('disk')">
+                                    Disco
+                                </button>
+                                <button id="tab-services" class="py-2 px-4 text-gray-600 font-medium" onclick="cambiarTab('services')">
+                                    Servicios
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Contenido de la pestaña Red -->
+                        <div id="content-network" class="tab-content">
+                            <!-- Gráfico de Ping -->
+                            <div class="bg-slate-800 rounded-xl p-4 shadow-md">
+                                <h4 class="text-lg font-medium mb-3">
+                                    <i class="mdi mdi-pulse mr-2 text-primary"></i>
+                                    Monitoreo de Ping
+                                </h4>
+                                <div class="h-60">
+                                    <canvas id="pingChart"></canvas>
+                                </div>
+                            </div>
+                            
+                            <!-- Estadísticas -->
+                            <div class="bg-slate-800 rounded-xl p-4 shadow-md">
+                                <h4 class="text-lg font-medium mb-3">
+                                    <i class="mdi mdi-chart-box-outline mr-2 text-primary"></i>
+                                    Estadísticas de Red
+                                </h4>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <p class="text-sm text-slate-400">Paquetes Enviados</p>
+                                        <p id="detail-packets-sent" class="text-lg font-medium">0</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm text-slate-400">Paquetes Recibidos</p>
+                                        <p id="detail-packets-received" class="text-lg font-medium">0</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm text-slate-400">Velocidad Descarga</p>
+                                        <p id="detail-download" class="text-lg font-medium">0 Mbps</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm text-slate-400">Velocidad Subida</p>
+                                        <p id="detail-upload" class="text-lg font-medium">0 Mbps</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm text-slate-400">Latencia</p>
+                                        <p id="detail-latency" class="text-lg font-medium">0 ms</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm text-slate-400">Pérdida de Paquetes</p>
+                                        <p id="detail-loss" class="text-lg font-medium">0%</p>
+                                    </div>
+                                </div>
+                                
+                                <!-- Contador de paquetes perdidos en esta sesión -->
+                                <div class="mt-4 p-3 bg-red-900 bg-opacity-20 rounded-lg border border-red-800">
+                                    <h5 class="text-sm font-medium mb-1 text-red-400 flex items-center">
+                                        <i class="mdi mdi-package-down mr-1"></i> 
+                                        Paquetes Perdidos (Sesión actual)
+                                    </h5>
+                                    <div class="flex items-center">
+                                        <span id="detail-session-packets-lost" class="text-2xl font-bold text-red-500">0</span>
+                                        <span class="text-xs text-slate-400 ml-2">Se reinicia al cambiar de servidor</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Contenido de la pestaña CPU -->
+                        <div id="content-cpu" class="tab-content hidden">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div class="bg-slate-800 rounded-xl p-4 shadow-md">
+                                    <h4 class="text-lg font-medium mb-3">
+                                        <i class="mdi mdi-cpu-64-bit mr-2 text-primary"></i>
+                                        Uso de CPU
+                                    </h4>
+                                    <div class="mb-4">
+                                        <div class="flex justify-between mb-2">
+                                            <span id="cpu-usage-text" class="text-lg font-medium">0%</span>
+                                            <span id="cpu-cores-text" class="text-slate-400">0 núcleos</span>
+                                        </div>
+                                        <div class="w-full bg-slate-700 rounded-full h-4">
+                                            <div id="cpu-usage-bar" class="bg-blue-600 h-4 rounded-full" style="width: 0%"></div>
+                                        </div>
+                                    </div>
+                                    <p id="cpu-model" class="text-slate-400 text-sm mt-2">--</p>
+                                </div>
+                                <div class="bg-slate-800 rounded-xl p-4 shadow-md">
+                                    <h4 class="text-lg font-medium mb-3">
+                                        <i class="mdi mdi-application mr-2 text-primary"></i>
+                                        Procesos Top
+                                    </h4>
+                                    <div id="cpu-top-processes" class="space-y-2">
+                                        <p class="text-slate-400">Cargando procesos...</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Contenido de la pestaña Memoria -->
+                        <div id="content-memory" class="tab-content hidden">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div class="bg-slate-800 rounded-xl p-4 shadow-md">
+                                    <h4 class="text-lg font-medium mb-3">
+                                        <i class="mdi mdi-memory mr-2 text-primary"></i>
+                                        Uso de Memoria
+                                    </h4>
+                                    <div class="mb-4">
+                                        <div class="flex justify-between mb-2">
+                                            <span id="memory-usage-text" class="text-lg font-medium">0%</span>
+                                            <span id="memory-total-text" class="text-slate-400">0 GB total</span>
+                                        </div>
+                                        <div class="w-full bg-slate-700 rounded-full h-4">
+                                            <div id="memory-usage-bar" class="bg-green-500 h-4 rounded-full" style="width: 0%"></div>
+                                        </div>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-4 mt-4">
+                                        <div>
+                                            <p class="text-sm text-slate-400">En uso</p>
+                                            <p id="memory-used" class="text-lg font-medium">0 GB</p>
+                                        </div>
+                                        <div>
+                                            <p class="text-sm text-slate-400">Disponible</p>
+                                            <p id="memory-free" class="text-lg font-medium">0 GB</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="bg-slate-800 rounded-xl p-4 shadow-md">
+                                    <h4 class="text-lg font-medium mb-3">
+                                        <i class="mdi mdi-chart-line mr-2 text-primary"></i>
+                                        Tendencia de Uso
+                                    </h4>
+                                    <div class="h-60">
+                                        <canvas id="memory-chart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Contenido de la pestaña Disco -->
+                        <div id="content-disk" class="tab-content hidden">
+                            <div class="bg-slate-800 rounded-xl p-4 shadow-md">
+                                <h4 class="text-lg font-medium mb-3">
+                                    <i class="mdi mdi-harddisk mr-2 text-primary"></i>
+                                    Unidades de Disco
+                                </h4>
+                                <div id="disk-drives" class="space-y-4">
+                                    <p class="text-slate-400">Cargando información de discos...</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Contenido de la pestaña Servicios -->
+                        <div id="content-services" class="tab-content hidden">
+                            <div class="bg-slate-800 rounded-xl p-4 shadow-md">
+                                <h4 class="text-lg font-medium mb-3">
+                                    <i class="mdi mdi-cog-outline mr-2 text-primary"></i>
+                                    Servicios del Sistema
+                                </h4>
+                                <div class="overflow-x-auto">
+                                    <table class="min-w-full text-sm text-left">
+                                        <thead class="bg-slate-700 text-xs uppercase">
+                                            <tr>
+                                                <th scope="col" class="px-6 py-3 text-slate-400">Servicio</th>
+                                                <th scope="col" class="px-6 py-3 text-slate-400">Estado</th>
+                                                <th scope="col" class="px-6 py-3 text-slate-400">Tipo de inicio</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="services-list" class="border-t border-slate-700">
+                                            <tr>
+                                                <td colspan="3" class="px-6 py-4 text-slate-400">Cargando servicios...</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal para editar servidor (oculto por defecto) -->
+    <div id="edit-server-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-surface rounded-xl p-6 shadow-lg max-w-md w-full">
+            <div class="flex justify-between items-center mb-6">
+                <h3 id="edit-modal-title" class="text-xl font-bold">Editar Servidor</h3>
+                <button id="close-edit-modal" class="p-2 rounded-full hover:bg-slate-700">
+                    <i class="mdi mdi-close"></i>
+                </button>
+            </div>
+            <form id="edit-server-form">
+                <input type="hidden" id="edit-server-id">
+                <div class="mb-4">
+                    <label for="edit-server-name" class="block text-sm text-slate-400 mb-1">Nombre del Servidor</label>
+                    <input type="text" id="edit-server-name" class="w-full p-2 rounded bg-slate-800 border border-slate-700 text-white" required>
+                </div>
+                <div class="mb-4">
+                    <label for="edit-server-ip" class="block text-sm text-slate-400 mb-1">Dirección IP</label>
+                    <input type="text" id="edit-server-ip" class="w-full p-2 rounded bg-slate-800 border border-slate-700 text-white" pattern="^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}$" required>
+                </div>
+                <div class="mb-4">
+                    <label for="edit-server-type" class="block text-sm text-slate-400 mb-1">Tipo de Servidor</label>
+                    <select id="edit-server-type" class="w-full p-2 rounded bg-slate-800 border border-slate-700 text-white">
+                        <option value="Windows Server">Windows Server</option>
+                        <option value="Linux">Linux</option>
+                        <option value="macOS">macOS</option>
+                        <option value="BSD">BSD</option>
+                        <option value="Otro">Otro</option>
+                    </select>
+                </div>
+                <div class="mb-4">
+                    <label for="edit-server-status" class="block text-sm text-slate-400 mb-1">Estado</label>
+                    <select id="edit-server-status" class="w-full p-2 rounded bg-slate-800 border border-slate-700 text-white">
+                        <option value="online">En línea</option>
+                        <option value="offline">Desconectado</option>
+                        <option value="warning">Advertencia</option>
+                    </select>
+                </div>
+                <div class="flex justify-end space-x-3 mt-6">
+                    <button type="button" id="cancel-edit" class="px-4 py-2 rounded bg-slate-700 hover:bg-slate-600 text-white">Cancelar</button>
+                    <button type="submit" class="px-4 py-2 rounded bg-primary hover:bg-blue-600 text-white">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal para agregar servidor (oculto por defecto) -->
+    <div id="add-server-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-surface rounded-xl p-6 shadow-lg max-w-md w-full">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-xl font-bold">Agregar Nuevo Servidor</h3>
+                <button id="close-add-modal" class="p-2 rounded-full hover:bg-slate-700">
+                    <i class="mdi mdi-close"></i>
+                </button>
+            </div>
+            <form id="add-server-form">
+                <div class="mb-4">
+                    <label for="new-server-name" class="block text-sm text-slate-400 mb-1">Nombre del Servidor</label>
+                    <input type="text" id="new-server-name" class="w-full p-2 rounded bg-slate-800 border border-slate-700 text-white" required>
+                </div>
+                <div class="mb-4">
+                    <label for="new-server-ip" class="block text-sm text-slate-400 mb-1">Dirección IP</label>
+                    <input type="text" id="new-server-ip" class="w-full p-2 rounded bg-slate-800 border border-slate-700 text-white" pattern="^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}$" required>
+                </div>
+                <div class="mb-4">
+                    <label for="new-server-type" class="block text-sm text-slate-400 mb-1">Tipo de Servidor</label>
+                    <select id="new-server-type" class="w-full p-2 rounded bg-slate-800 border border-slate-700 text-white">
+                        <option value="Windows Server">Windows Server</option>
+                        <option value="Linux">Linux</option>
+                        <option value="macOS">macOS</option>
+                        <option value="BSD">BSD</option>
+                        <option value="Otro">Otro</option>
+                    </select>
+                </div>
+                <div class="mb-4">
+                    <label for="new-server-status" class="block text-sm text-slate-400 mb-1">Estado Inicial</label>
+                    <select id="new-server-status" class="w-full p-2 rounded bg-slate-800 border border-slate-700 text-white">
+                        <option value="online">En línea</option>
+                        <option value="offline">Desconectado</option>
+                        <option value="warning">Advertencia</option>
+                    </select>
+                </div>
+                <div class="flex justify-end space-x-3 mt-6">
+                    <button type="button" id="cancel-add" class="px-4 py-2 rounded bg-slate-700 hover:bg-slate-600 text-white">Cancelar</button>
+                    <button type="submit" class="px-4 py-2 rounded bg-primary hover:bg-blue-600 text-white">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Script -->
+    <script>
+        // Datos simulados - No dependen de ningún script externo
+        const servers = [
+            {
+                id: 1,
+                name: 'Servidor Windows',
+                ip: '192.168.0.148',
+                type: 'Windows Server',
+                status: 'online',
+                metrics: {
+                    ping: Array.from({length: 20}, () => Math.floor(Math.random() * 50) + 10),
+                    packetsSent: 1240,
+                    packetsReceived: 1230,
+                    packetsLossPercent: 0.8,
+                    downloadSpeed: 350,
+                    uploadSpeed: 120,
+                    latency: 15,
+                    sessionPacketsSent: 0,
+                    sessionPacketsReceived: 0
+                },
+                sessionPacketsLost: 0 // Contador de paquetes perdidos en la sesión actual
+            },
+            {
+                id: 2,
+                name: 'Servidor Base de Datos',
+                ip: '192.168.0.150',
+                type: 'Linux',
+                status: 'online',
+                metrics: {
+                    ping: Array.from({length: 20}, () => Math.floor(Math.random() * 50) + 20),
+                    packetsSent: 980,
+                    packetsReceived: 970,
+                    packetsLossPercent: 1.0,
+                    downloadSpeed: 250,
+                    uploadSpeed: 80,
+                    latency: 25,
+                    sessionPacketsSent: 0,
+                    sessionPacketsReceived: 0
+                },
+                sessionPacketsLost: 0
+            },
+            {
+                id: 3,
+                name: 'Servidor Web',
+                ip: '192.168.0.152',
+                type: 'Linux',
+                status: 'offline',
+                metrics: {
+                    ping: Array.from({length: 20}, () => 0),
+                    packetsSent: 450,
+                    packetsReceived: 0,
+                    packetsLossPercent: 100,
+                    downloadSpeed: 0,
+                    uploadSpeed: 0,
+                    latency: 0,
+                    sessionPacketsSent: 0,
+                    sessionPacketsReceived: 0
+                },
+                sessionPacketsLost: 0
+            },
+            {
+                id: 4,
+                name: 'Servidor de Archivos',
+                ip: '192.168.0.154',
+                type: 'Windows Server',
+                status: 'warning',
+                metrics: {
+                    ping: Array.from({length: 20}, () => Math.floor(Math.random() * 100) + 50),
+                    packetsSent: 890,
+                    packetsReceived: 810,
+                    packetsLossPercent: 9.0,
+                    downloadSpeed: 180,
+                    uploadSpeed: 50,
+                    latency: 75,
+                    sessionPacketsSent: 0,
+                    sessionPacketsReceived: 0
+                },
+                sessionPacketsLost: 0
+            }
+        ];
+        
+        let nextServerId = 5; // Para asignar IDs a nuevos servidores
+        let detailUpdateInterval = null; // Intervalo para actualizar el gráfico de ping
+        let currentDetailedServerId = null; // ID del servidor que se está mostrando en detalle
+        let pingChart = null;
+        let memoryChart = null; // Gráfico para la memoria
+        
+        // Variables para almacenar datos históricos de memoria
+        let memoryDataHistory = [];
+        let memoryLabels = Array(20).fill('');
+        
+        // Intervalos para actualizaciones de métricas
+        let cpuUpdateInterval = null;
+        let memoryUpdateInterval = null;
+        let diskUpdateInterval = null;
+        let servicesUpdateInterval = null;
+        
+        // Endpoint base de la API
+        const API_BASE_URL = '/api/v1';
+        
+        // Función para realizar ping real a un servidor mediante el API
+        async function realizarPingReal(ipAddress) {
+            try {
+                console.log(`Realizando ping a ${ipAddress}...`);
+                
+                // Realizar petición al endpoint de ping (ya no se necesita token)
+                const response = await fetch(`${API_BASE_URL}/metrics/ping/${ipAddress}`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Error HTTP: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('Datos de ping real:', data);
+                
+                // Asegurarse de que ping_times es un array con al menos un valor
+                if (!data.ping_times || !Array.isArray(data.ping_times) || data.ping_times.length === 0) {
+                    console.warn('No se recibieron tiempos de ping válidos, usando valores por defecto');
+                    data.ping_times = [0]; // Valor por defecto para evitar errores
+                }
+                
+                // Extraer tiempos del output crudo si ping_times no tiene suficientes valores
+                if (data.ping_times.length < 4 && data.raw_output) {
+                    console.log('Extrayendo tiempos adicionales del output crudo...');
+                    // Buscar patrones como "tiempo=1ms", "tiempo<1ms", "time=1ms" o "time<1ms"
+                    const timeRegex = /tiempo[=<](\d+)ms|time[=<](\d+)ms/g;
+                    let match;
+                    const extractedTimes = [];
+                    
+                    while ((match = timeRegex.exec(data.raw_output)) !== null) {
+                        // Pueden ser "" si no hay coincidencia, tomamos el primer valor no vacío
+                        const time = match[1] || match[2] || "0";
+                        extractedTimes.push(parseInt(time));
+                    }
+                    
+                    if (extractedTimes.length > 0) {
+                        data.ping_times = extractedTimes;
+                    }
+                }
+                
+                // Asegurarse de que los contadores de paquetes sean números válidos
+                if (!data.packets || typeof data.packets !== 'object') {
+                    data.packets = {
+                        sent: 4,
+                        received: 4,
+                        lost: 0,
+                        loss_percent: 0
+                    };
+                } else {
+                    // Asegurar que todos los campos existan con valores predeterminados si es necesario
+                    data.packets.sent = data.packets.sent || 4;
+                    data.packets.received = data.packets.received || 4;
+                    data.packets.lost = data.packets.lost || 0;
+                    data.packets.loss_percent = data.packets.loss_percent || 0;
+                }
+                
+                return data;
+            } catch (error) {
+                console.error(`Error al realizar ping a ${ipAddress}:`, error);
+                // Retornar un objeto con estructura similar pero con valores predeterminados
+                return {
+                    success: false,
+                    error: error.message,
+                    ip_address: ipAddress,
+                    ping_times: [0],
+                    packets: {
+                        sent: 0,
+                        received: 0,
+                        lost: 0,
+                        loss_percent: 0
+                    }
+                };
+            }
+        }
+
+        // Funciones principales
+        document.addEventListener('DOMContentLoaded', function() {
+            mostrarFechaActual();
+            renderizarServidores();
+            configurarEventos();
+            
+            // Mostrar usuario si existe en localStorage
+            const username = localStorage.getItem('username');
+            if (username) {
+                document.getElementById('user-display').textContent = username;
+            }
+        });
+        
+        function mostrarFechaActual() {
+            const ahora = new Date();
+            const opciones = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            document.getElementById('fecha-actual').textContent = ahora.toLocaleDateString('es-ES', opciones);
+        }
+        
+        function renderizarServidores() {
+            const container = document.getElementById('servers-container');
+            container.innerHTML = '';
+            
+            servers.forEach(server => {
+                const statusClasses = {
+                    online: 'bg-green-500 text-green-400',
+                    offline: 'bg-red-500 text-red-400',
+                    warning: 'bg-yellow-500 text-yellow-400'
+                };
+                
+                const statusText = {
+                    online: 'Online',
+                    offline: 'Offline',
+                    warning: 'Warning'
+                };
+                
+                const statusClass = statusClasses[server.status] || statusClasses.offline;
+                const statusLabel = statusText[server.status] || 'Desconocido';
+                const [bgClass, textClass] = statusClass.split(' ');
+                
+                const card = `
+                <div class="bg-slate-800 rounded-xl shadow-md overflow-hidden">
+                    <div class="p-5">
+                        <div class="flex justify-between items-center mb-3">
+                            <h3 class="text-lg font-medium flex items-center">
+                                <i class="mdi mdi-server-network mr-2 text-primary"></i>
+                                ${server.name}
+                            </h3>
+                            <span class="flex items-center ${textClass}">
+                                <span class="${bgClass} rounded-full w-2 h-2 mr-1.5"></span>
+                                ${statusLabel}
+                            </span>
+                        </div>
+                        
+                        <div class="text-sm text-slate-400 mb-3">
+                            <div class="flex items-center mb-1">
+                                <i class="mdi mdi-ip-network mr-2"></i>
+                                ${server.ip}
+                            </div>
+                            <div class="flex items-center">
+                                <i class="mdi mdi-desktop-tower mr-2"></i>
+                                ${server.type}
+                            </div>
+                        </div>
+                        
+                        <div class="flex justify-between space-x-3 mt-5">
+                            <button onclick="editarServidor(${server.id})" class="flex-1 py-2 px-3 bg-slate-700 hover:bg-slate-600 rounded text-sm flex items-center justify-center">
+                                <i class="mdi mdi-pencil mr-1"></i> Editar
+                            </button>
+                            <button onclick="verDetallesServidor(${server.id})" class="flex-1 py-2 px-3 bg-blue-600 hover:bg-blue-700 rounded text-sm flex items-center justify-center text-white font-medium">
+                                <i class="mdi mdi-information mr-1"></i> Ver Detalles
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                `;
+                
+                container.innerHTML += card;
+            });
+        }
+        
+        function configurarEventos() {
+            // Configurar botón para cerrar detalles
+            document.getElementById('close-detail').addEventListener('click', ocultarDetalles);
+            
+            // Configurar botón para agregar servidor
+            document.getElementById('add-server-btn').addEventListener('click', mostrarFormularioAgregar);
+            
+            // Configurar botón para cerrar modal de agregar servidor
+            document.getElementById('close-add-modal').addEventListener('click', ocultarFormularioAgregar);
+            document.getElementById('cancel-add').addEventListener('click', ocultarFormularioAgregar);
+            
+            // Configurar botón para cerrar modal de editar servidor
+            document.getElementById('close-edit-modal').addEventListener('click', ocultarFormularioEdicion);
+            document.getElementById('cancel-edit').addEventListener('click', ocultarFormularioEdicion);
+            
+            // Configurar formulario para editar servidor
+            document.getElementById('edit-server-form').addEventListener('submit', function(e) {
+                e.preventDefault();
+                guardarEdicionServidor();
+            });
+            
+            // Configurar formulario para agregar servidor
+            document.getElementById('add-server-form').addEventListener('submit', function(e) {
+                e.preventDefault();
+                agregarServidor();
+            });
+        }
+        
+        function mostrarDetalles(serverId) {
+            const server = servers.find(s => s.id === serverId);
+            if (!server) return;
+            
+            // Limpiar cualquier intervalo previo
+            limpiarTodosLosIntervalos();
+            
+            // Actualizar título
+            document.getElementById('detail-title').textContent = `${server.name} (${server.ip})`;
+            
+            // Reiniciar contadores de la sesión actual
+            server.sessionPacketsLost = 0;
+            server.metrics.sessionPacketsSent = 0;
+            server.metrics.sessionPacketsReceived = 0;
+            
+            // Actualizar estadísticas iniciales (se actualizarán con datos reales)
+            document.getElementById('detail-packets-sent').textContent = server.metrics.sessionPacketsSent;
+            document.getElementById('detail-packets-received').textContent = server.metrics.sessionPacketsReceived;
+            document.getElementById('detail-download').textContent = `${server.metrics.downloadSpeed} Mbps`;
+            document.getElementById('detail-upload').textContent = `${server.metrics.uploadSpeed} Mbps`;
+            document.getElementById('detail-latency').textContent = `${server.metrics.latency} ms`;
+            document.getElementById('detail-loss').textContent = `${server.metrics.packetsLossPercent.toFixed(1)}%`;
+            document.getElementById('detail-session-packets-lost').textContent = server.sessionPacketsLost;
+            
+            // Mostrar área de detalles
+            document.getElementById('server-detail').classList.remove('hidden');
+            
+            // Mostrar la pestaña de red por defecto
+            cambiarTab('network');
+            
+            // Inicializar/actualizar gráfico con datos vacíos inicialmente
+            server.metrics.ping = Array(20).fill(0);
+            actualizarGrafico(server.metrics.ping);
+            
+            // Actualizar ID del servidor que se está mostrando en detalle
+            currentDetailedServerId = serverId;
+            
+            // Iniciar intervalo para actualizar con ping real
+            detailUpdateInterval = setInterval(async () => {
+                // Solo continuar si todavía estamos viendo el mismo servidor
+                if (currentDetailedServerId !== serverId) {
+                    return;
+                }
+                
+                // Obtener ping real mediante la API
+                const pingData = await realizarPingReal(server.ip);
+                
+                if (pingData && pingData.success) {
+                    // Actualizar el historial de ping con los nuevos valores reales
+                    // Convertir a números con 1 decimal para uniformidad
+                    const pingValues = pingData.ping_times.map(val => Number(val));
+                    
+                    // Actualizar el historial de ping manteniendo los últimos valores
+                    if (server.metrics.ping.length >= 20) {
+                        // Quitar el más antiguo y añadir el nuevo
+                        server.metrics.ping = [...server.metrics.ping.slice(1), ...pingValues];
+                    } else {
+                        // Añadir los nuevos valores
+                        server.metrics.ping = [...server.metrics.ping, ...pingValues];
+                    }
+                    
+                    // Actualizar gráfico con los datos reales
+                    actualizarGrafico(server.metrics.ping);
+                    
+                    // Actualizar estadísticas de latencia en tiempo real
+                    const latenciaActual = pingValues.length > 0 ? pingValues[pingValues.length - 1] : 0;
+                    document.getElementById('detail-latency').textContent = `${latenciaActual} ms`;
+                    
+                    // Actualizar contadores de paquetes
+                    server.metrics.sessionPacketsSent += pingData.packets.sent;
+                    server.metrics.sessionPacketsReceived += pingData.packets.received;
+                    server.sessionPacketsLost += pingData.packets.lost;
+                    
+                    // Actualizar la interfaz con datos reales
+                    document.getElementById('detail-packets-sent').textContent = server.metrics.sessionPacketsSent;
+                    document.getElementById('detail-packets-received').textContent = server.metrics.sessionPacketsReceived;
+                    document.getElementById('detail-session-packets-lost').textContent = server.sessionPacketsLost;
+                    
+                    // Calcular y actualizar porcentaje de pérdida en tiempo real
+                    if (server.metrics.sessionPacketsSent > 0) {
+                        const lossPercent = (server.sessionPacketsLost / server.metrics.sessionPacketsSent) * 100;
+                        document.getElementById('detail-loss').textContent = `${lossPercent.toFixed(1)}%`;
+                    }
+                } else {
+                    // Si hay error en el ping, marcar servidor como no disponible
+                    console.error(`Error al obtener datos de ping para ${server.ip}`);
+                    document.getElementById('detail-latency').textContent = 'N/A';
+                    
+                    // Simular un servidor offline en el gráfico
+                    const newPing = [...server.metrics.ping.slice(1), 0];
+                    server.metrics.ping = newPing;
+                    actualizarGrafico(newPing);
+                }
+            }, 3000); // Actualización cada 3 segundos para no sobrecargar el servidor
+        }
+        
+        function ocultarDetalles() {
+            // Ocultar área de detalles
+            document.getElementById('server-detail').classList.add('hidden');
+            
+            // Limpiar todos los intervalos
+            limpiarTodosLosIntervalos();
+            
+            // Actualizar variables globales
+            currentDetailedServerId = null;
+        }
+        
+        // Función para limpiar todos los intervalos
+        function limpiarTodosLosIntervalos() {
+            // Detener todos los intervalos de actualización
+            if (detailUpdateInterval) {
+                clearInterval(detailUpdateInterval);
+                detailUpdateInterval = null;
+            }
+            
+            if (cpuUpdateInterval) {
+                clearTimeout(cpuUpdateInterval);
+                cpuUpdateInterval = null;
+            }
+            
+            if (memoryUpdateInterval) {
+                clearTimeout(memoryUpdateInterval);
+                memoryUpdateInterval = null;
+            }
+            
+            if (diskUpdateInterval) {
+                clearTimeout(diskUpdateInterval);
+                diskUpdateInterval = null;
+            }
+            
+            if (servicesUpdateInterval) {
+                clearTimeout(servicesUpdateInterval);
+                servicesUpdateInterval = null;
+            }
+        }
+        
+        function actualizarGrafico(datos) {
+            const ctx = document.getElementById('pingChart').getContext('2d');
+            
+            // Destruir gráfico existente si hay uno
+            if (pingChart) {
+                pingChart.destroy();
+            }
+            
+            // Generar etiquetas secuenciales para el eje X
+            const labels = [];
+            for (let i = 0; i < datos.length; i++) {
+                labels.push(`${i+1}`); // Numeramos los puntos de 1 en adelante
+            }
+            
+            // Crear nuevo gráfico
+            pingChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Ping (ms)',
+                        data: datos,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 3, // Línea más gruesa para mejor visibilidad
+                        tension: 0.2, // Tensión ligera para suavizar un poco
+                        fill: true,
+                        pointRadius: 0, // Sin puntos, solo línea
+                        pointHoverRadius: 4 // Pero mostrar puntos al pasar el ratón
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animations: {
+                        tension: {
+                            duration: 300,
+                            easing: 'linear'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            min: function(context) {
+                                // Establecer mínimo un poco por debajo del valor mínimo para ver mejor las fluctuaciones
+                                const min = Math.min(...datos) * 0.7;
+                                return min > 0 ? min : 0;
+                            },
+                            max: function(context) {
+                                // Establecer máximo un poco por encima del valor máximo para ver mejor las fluctuaciones
+                                return Math.max(...datos) * 1.3;
+                            },
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false // Sin líneas de cuadrícula para el eje X
+                            },
+                            ticks: {
+                                display: false // Sin etiquetas en el eje X para una vista más limpia
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(tooltipItems) {
+                                    return `Medición ${tooltipItems[0].label}`;
+                                },
+                                label: function(context) {
+                                    return `${context.raw} ms`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        function cerrarSesion() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('username');
+            window.location.href = '/'; // Redirigir a la página de inicio
+        }
+        
+        function mostrarFormularioEdicion(serverId) {
+            // Mostrar modal de editar servidor
+            document.getElementById('edit-server-modal').classList.remove('hidden');
+            
+            // Obtener servidor
+            const server = servers.find(s => s.id === serverId);
+            if (!server) return;
+            
+            // Actualizar título del modal
+            document.getElementById('edit-modal-title').textContent = `Editar ${server.name}`;
+            
+            // Actualizar campos del formulario
+            document.getElementById('edit-server-id').value = serverId;
+            document.getElementById('edit-server-name').value = server.name;
+            document.getElementById('edit-server-ip').value = server.ip;
+            document.getElementById('edit-server-type').value = server.type;
+            document.getElementById('edit-server-status').value = server.status;
+        }
+        
+        function ocultarFormularioEdicion() {
+            // Ocultar modal de editar servidor
+            document.getElementById('edit-server-modal').classList.add('hidden');
+        }
+        
+        function mostrarFormularioAgregar() {
+            // Mostrar modal de agregar servidor
+            document.getElementById('add-server-modal').classList.remove('hidden');
+        }
+        
+        function ocultarFormularioAgregar() {
+            // Ocultar modal de agregar servidor
+            document.getElementById('add-server-modal').classList.add('hidden');
+        }
+        
+        function guardarEdicionServidor() {
+            // Obtener valores del formulario
+            const serverId = parseInt(document.getElementById('edit-server-id').value);
+            const name = document.getElementById('edit-server-name').value;
+            const ip = document.getElementById('edit-server-ip').value;
+            const type = document.getElementById('edit-server-type').value;
+            const status = document.getElementById('edit-server-status').value;
+            
+            // Actualizar servidor
+            const serverIndex = servers.findIndex(s => s.id === serverId);
+            if (serverIndex !== -1) {
+                servers[serverIndex].name = name;
+                servers[serverIndex].ip = ip;
+                servers[serverIndex].type = type;
+                servers[serverIndex].status = status;
+            }
+            
+            // Ocultar modal
+            ocultarFormularioEdicion();
+            
+            // Renderizar servidores nuevamente
+            renderizarServidores();
+        }
+        
+        async function agregarServidor() {
+            const nombre = prompt("Nombre del servidor:");
+            if (!nombre || nombre.trim() === "") return;
+            
+            const ip = prompt("Dirección IP del servidor:");
+            if (!ip || ip.trim() === "") return;
+            
+            // Validar formato IP básico
+            const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+            if (!ipRegex.test(ip)) {
+                alert("Por favor, ingrese una dirección IP válida (formato: xxx.xxx.xxx.xxx)");
+                return;
+            }
+            
+            // Mostrar mensaje mientras se realiza la validación
+            alert("Validando conexión con el servidor... Esto puede tomar unos segundos.");
+            
+            try {
+                // Intentar hacer ping al servidor para validar su existencia
+                const pingResponse = await fetch(`${API_BASE_URL}/ping/${ip}`);
+                const pingData = await pingResponse.json();
+                
+                if (!pingData.success || (pingData.ping_times && pingData.ping_times.every(t => t === 0))) {
+                    if (!confirm("No se pudo conectar con el servidor. ¿Desea agregarlo de todos modos?")) {
+                        return;
+                    }
+                }
+                
+                // Crear el nuevo servidor
+                const nuevoServidor = {
+                    id: Date.now().toString(), // ID único basado en timestamp
+                    name: nombre.trim(),
+                    ip: ip.trim(),
+                    status: pingData.success ? "online" : "unknown",
+                    tags: ["servidor"]
+                };
+                
+                // Agregar el nuevo servidor a la lista
+                servers.push(nuevoServidor);
+                
+                // Guardar en localStorage para persistencia
+                localStorage.setItem('servers', JSON.stringify(servers));
+                
+                // Actualizar la interfaz
+                renderizarServidores();
+                
+                alert(`Servidor "${nombre}" agregado correctamente.`);
+            } catch (error) {
+                console.error("Error al validar el servidor:", error);
+                
+                if (confirm("Ocurrió un error al validar el servidor. ¿Desea agregarlo de todos modos?")) {
+                    // Crear el nuevo servidor a pesar del error
+                    const nuevoServidor = {
+                        id: Date.now().toString(),
+                        name: nombre.trim(),
+                        ip: ip.trim(),
+                        status: "unknown",
+                        tags: ["servidor"]
+                    };
+                    
+                    // Agregar el nuevo servidor a la lista
+                    servers.push(nuevoServidor);
+                    
+                    // Guardar en localStorage para persistencia
+                    localStorage.setItem('servers', JSON.stringify(servers));
+                    
+                    // Actualizar la interfaz
+                    renderizarServidores();
+                    
+                    alert(`Servidor "${nombre}" agregado correctamente.`);
+                }
+            }
+        }
+        
+        // Funciones para obtener métricas de sistema
+        async function obtenerCPUInfo(ipAddress) {
+            try {
+                console.log(`Obteniendo información de CPU para ${ipAddress}...`);
+                const response = await fetch(`${API_BASE_URL}/system/cpu/${ipAddress}`);
+                if (!response.ok) {
+                    throw new Error(`Error HTTP: ${response.status}`);
+                }
+                return await response.json();
+            } catch (error) {
+                console.error(`Error al obtener información de CPU: ${error}`);
+                return null;
+            }
+        }
+        
+        async function obtenerMemoriaInfo(ipAddress) {
+            try {
+                console.log(`Obteniendo información de memoria para ${ipAddress}...`);
+                const response = await fetch(`${API_BASE_URL}/system/memory/${ipAddress}`);
+                if (!response.ok) {
+                    throw new Error(`Error HTTP: ${response.status}`);
+                }
+                return await response.json();
+            } catch (error) {
+                console.error(`Error al obtener información de memoria: ${error}`);
+                return null;
+            }
+        }
+        
+        async function obtenerDiscoInfo(ipAddress) {
+            try {
+                console.log(`Obteniendo información de disco para ${ipAddress}...`);
+                const response = await fetch(`${API_BASE_URL}/system/disk/${ipAddress}`);
+                if (!response.ok) {
+                    throw new Error(`Error HTTP: ${response.status}`);
+                }
+                return await response.json();
+            } catch (error) {
+                console.error(`Error al obtener información de disco: ${error}`);
+                return null;
+            }
+        }
+        
+        async function obtenerServiciosInfo(ipAddress) {
+            try {
+                console.log(`Obteniendo información de servicios para ${ipAddress}...`);
+                const response = await fetch(`${API_BASE_URL}/system/services/${ipAddress}`);
+                if (!response.ok) {
+                    throw new Error(`Error HTTP: ${response.status}`);
+                }
+                return await response.json();
+            } catch (error) {
+                console.error(`Error al obtener información de servicios: ${error}`);
+                return null;
+            }
+        }
+        
+        // Función para cambiar entre pestañas
+        function cambiarTab(tabId) {
+            // Ocultar todos los contenidos
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.add('hidden');
+            });
+            
+            // Resetear estilos de todas las pestañas
+            document.querySelectorAll('[id^="tab-"]').forEach(tab => {
+                tab.classList.remove('text-blue-500', 'border-b-2', 'border-blue-500');
+                tab.classList.add('text-gray-600');
+            });
+            
+            // Mostrar el contenido seleccionado
+            document.getElementById(`content-${tabId}`).classList.remove('hidden');
+            
+            // Aplicar estilo a la pestaña seleccionada
+            document.getElementById(`tab-${tabId}`).classList.add('text-blue-500', 'border-b-2', 'border-blue-500');
+            document.getElementById(`tab-${tabId}`).classList.remove('text-gray-600');
+            
+            // Si la pestaña seleccionada es una de las nuevas métricas de sistema, actualizar datos
+            const server = servers.find(s => s.id === currentDetailedServerId);
+            if (server) {
+                if (tabId === 'cpu') {
+                    actualizarCPUInfo(server.ip);
+                } else if (tabId === 'memory') {
+                    actualizarMemoriaInfo(server.ip);
+                } else if (tabId === 'disk') {
+                    actualizarDiscoInfo(server.ip);
+                } else if (tabId === 'services') {
+                    actualizarServiciosInfo(server.ip);
+                }
+            }
+        }
+        
+        // Variables para gráficos
+        
+        // Variables para almacenar datos históricos de memoria
+        
+        // Intervalos para actualizaciones de métricas
+        
+        // Funciones para actualizar la interfaz con métricas del sistema
+        async function actualizarCPUInfo(ipAddress) {
+            const cpuData = await obtenerCPUInfo(ipAddress);
+            console.log('Datos de CPU:', cpuData);
+            
+            if (cpuData && cpuData.success) {
+                // Actualizar barra de uso de CPU
+                const usageBar = document.getElementById('cpu-usage-bar');
+                usageBar.style.width = `${cpuData.usage_percent}%`;
+                
+                // Establecer color según nivel de uso
+                if (cpuData.usage_percent > 90) {
+                    usageBar.classList.remove('bg-blue-600', 'bg-yellow-500');
+                    usageBar.classList.add('bg-red-600');
+                } else if (cpuData.usage_percent > 70) {
+                    usageBar.classList.remove('bg-blue-600', 'bg-red-600');
+                    usageBar.classList.add('bg-yellow-500');
+                } else {
+                    usageBar.classList.remove('bg-yellow-500', 'bg-red-600');
+                    usageBar.classList.add('bg-blue-600');
+                }
+                
+                // Actualizar textos
+                document.getElementById('cpu-usage-text').textContent = `${cpuData.usage_percent}%`;
+                document.getElementById('cpu-cores-text').textContent = `${cpuData.cores} núcleos`;
+                document.getElementById('cpu-model').textContent = cpuData.name;
+                
+                // Actualizar lista de procesos top
+                const processList = document.getElementById('cpu-top-processes');
+                processList.innerHTML = '';
+                
+                if (cpuData.top_processes && cpuData.top_processes.length > 0) {
+                    cpuData.top_processes.forEach(process => {
+                        processList.innerHTML += `
+                            <div class="flex justify-between items-center p-2 bg-slate-700 rounded">
+                                <span class="font-medium">${process.name}</span>
+                                <span class="bg-blue-800 px-2 py-1 rounded text-xs">${process.cpu_usage}%</span>
+                            </div>
+                        `;
+                    });
+                } else {
+                    processList.innerHTML = '<p class="text-slate-400">No hay información de procesos disponible</p>';
+                }
+                
+                // Programar próxima actualización si aún estamos en esta pestaña
+                if (document.getElementById('content-cpu').classList.contains('hidden')) {
+                    return; // No seguir actualizando si la pestaña no está visible
+                }
+                
+                cpuUpdateInterval = setTimeout(() => {
+                    actualizarCPUInfo(ipAddress);
+                }, 5000); // Actualizar cada 5 segundos
+            } else {
+                document.getElementById('cpu-usage-text').textContent = 'N/A';
+                document.getElementById('cpu-cores-text').textContent = 'Información no disponible';
+                document.getElementById('cpu-model').textContent = 'Error al obtener datos de CPU';
+                document.getElementById('cpu-top-processes').innerHTML = '<p class="text-red-400">No se pudo obtener información de CPU</p>';
+            }
+        }
+        
+        async function actualizarMemoriaInfo(ipAddress) {
+            const memoryData = await obtenerMemoriaInfo(ipAddress);
+            console.log('Datos de memoria:', memoryData);
+            
+            if (memoryData && memoryData.success) {
+                // Actualizar barra de uso de memoria
+                const usageBar = document.getElementById('memory-usage-bar');
+                usageBar.style.width = `${memoryData.usage_percent}%`;
+                
+                // Establecer color según nivel de uso
+                if (memoryData.usage_percent > 90) {
+                    usageBar.classList.remove('bg-green-500', 'bg-yellow-500');
+                    usageBar.classList.add('bg-red-600');
+                } else if (memoryData.usage_percent > 70) {
+                    usageBar.classList.remove('bg-green-500', 'bg-red-600');
+                    usageBar.classList.add('bg-yellow-500');
+                } else {
+                    usageBar.classList.remove('bg-yellow-500', 'bg-red-600');
+                    usageBar.classList.add('bg-green-500');
+                }
+                
+                // Actualizar textos
+                document.getElementById('memory-usage-text').textContent = `${memoryData.usage_percent}%`;
+                document.getElementById('memory-total-text').textContent = `${memoryData.total_gb} GB total`;
+                document.getElementById('memory-used').textContent = `${memoryData.used_gb} GB`;
+                document.getElementById('memory-free').textContent = `${memoryData.free_gb} GB`;
+                
+                // Actualizar gráfico de tendencia de memoria
+                actualizarMemoryChart(memoryData.usage_percent);
+                
+                // Programar próxima actualización si aún estamos en esta pestaña
+                if (document.getElementById('content-memory').classList.contains('hidden')) {
+                    return; // No seguir actualizando si la pestaña no está visible
+                }
+                
+                memoryUpdateInterval = setTimeout(() => {
+                    actualizarMemoriaInfo(ipAddress);
+                }, 5000); // Actualizar cada 5 segundos
+            } else {
+                document.getElementById('memory-usage-text').textContent = 'N/A';
+                document.getElementById('memory-total-text').textContent = 'Información no disponible';
+                document.getElementById('memory-used').textContent = 'N/A';
+                document.getElementById('memory-free').textContent = 'N/A';
+            }
+        }
+        
+        function actualizarMemoryChart(newValue) {
+            // Agregar nuevo valor al historial
+            if (memoryDataHistory.length >= 20) {
+                memoryDataHistory.shift(); // Quitar el dato más antiguo
+            }
+            memoryDataHistory.push(newValue);
+            
+            // Crear etiquetas de tiempo actualizadas
+            const ahora = new Date();
+            const nuevaEtiqueta = ahora.getHours() + ':' + 
+                (ahora.getMinutes() < 10 ? '0' : '') + ahora.getMinutes() + ':' + 
+                (ahora.getSeconds() < 10 ? '0' : '') + ahora.getSeconds();
+            
+            if (memoryLabels.length >= 20) {
+                memoryLabels.shift(); // Quitar la etiqueta más antigua
+            }
+            memoryLabels.push(nuevaEtiqueta);
+            
+            // Inicializar o actualizar el gráfico
+            if (!memoryChart) {
+                const ctx = document.getElementById('memory-chart').getContext('2d');
+                memoryChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: memoryLabels,
+                        datasets: [{
+                            label: 'Uso de Memoria (%)',
+                            data: memoryDataHistory,
+                            borderColor: 'rgba(72, 187, 120, 1)',
+                            backgroundColor: 'rgba(72, 187, 120, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                max: 100,
+                                grid: {
+                                    color: 'rgba(255, 255, 255, 0.1)'
+                                },
+                                ticks: {
+                                    color: 'rgba(255, 255, 255, 0.7)'
+                                }
+                            },
+                            x: {
+                                grid: {
+                                    display: false
+                                },
+                                ticks: {
+                                    color: 'rgba(255, 255, 255, 0.7)',
+                                    maxRotation: 0,
+                                    autoSkip: true,
+                                    maxTicksLimit: 5
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        },
+                        elements: {
+                            point: {
+                                radius: 0 // Ocultar puntos
+                            }
+                        }
+                    }
+                });
+            } else {
+                // Actualizar datos existentes
+                memoryChart.data.labels = memoryLabels;
+                memoryChart.data.datasets[0].data = memoryDataHistory;
+                memoryChart.update();
+            }
+        }
+        
+        async function actualizarDiscoInfo(ipAddress) {
+            const diskData = await obtenerDiscoInfo(ipAddress);
+            console.log('Datos de disco:', diskData);
+            
+            if (diskData && diskData.success && diskData.disks) {
+                const disksContainer = document.getElementById('disk-drives');
+                disksContainer.innerHTML = '';
+                
+                // Generar visualización para cada disco
+                diskData.disks.forEach(disk => {
+                    // Determinar color según nivel de uso
+                    let barColorClass = 'bg-blue-600';
+                    if (disk.usage_percent > 90) {
+                        barColorClass = 'bg-red-600';
+                    } else if (disk.usage_percent > 75) {
+                        barColorClass = 'bg-yellow-500';
+                    }
+                    
+                    disksContainer.innerHTML += `
+                        <div class="mb-4">
+                            <div class="flex justify-between mb-1">
+                                <span class="font-medium">${disk.drive}</span>
+                                <span class="text-slate-400">${disk.usage_percent}% usado</span>
+                            </div>
+                            <div class="w-full bg-slate-700 rounded-full h-3 mb-2">
+                                <div class="${barColorClass} h-3 rounded-full" style="width: ${disk.usage_percent}%"></div>
+                            </div>
+                            <div class="flex justify-between text-xs text-slate-400">
+                                <span>Usado: ${disk.used_gb} GB</span>
+                                <span>Libre: ${disk.free_gb} GB</span>
+                                <span>Total: ${disk.total_gb} GB</span>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                // Programar próxima actualización si aún estamos en esta pestaña
+                if (document.getElementById('content-disk').classList.contains('hidden')) {
+                    return; // No seguir actualizando si la pestaña no está visible
+                }
+                
+                diskUpdateInterval = setTimeout(() => {
+                    actualizarDiscoInfo(ipAddress);
+                }, 10000); // Actualizar cada 10 segundos (más lento para discos)
+            } else {
+                document.getElementById('disk-drives').innerHTML = '<p class="text-red-400">No se pudo obtener información de discos</p>';
+            }
+        }
+        
+        async function actualizarServiciosInfo(ipAddress) {
+            const servicesData = await obtenerServiciosInfo(ipAddress);
+            console.log('Datos de servicios:', servicesData);
+            
+            if (servicesData && servicesData.success && servicesData.services) {
+                const servicesContainer = document.getElementById('services-list');
+                servicesContainer.innerHTML = '';
+                
+                if (servicesData.services.length === 0) {
+                    servicesContainer.innerHTML = '<tr><td colspan="3" class="px-6 py-4 text-slate-400">No hay servicios para mostrar</td></tr>';
+                    return;
+                }
+                
+                // Generar filas para cada servicio
+                servicesData.services.forEach(service => {
+                    // Determinar clase de estado
+                    let stateClass = 'text-gray-400';
+                    let stateText = service.state;
+                    
+                    if (service.state === 'RUNNING') {
+                        stateClass = 'text-green-500';
+                        stateText = 'En ejecución';
+                    } else if (service.state === 'STOPPED') {
+                        stateClass = 'text-red-500';
+                        stateText = 'Detenido';
+                    } else if (service.state === 'PAUSED') {
+                        stateClass = 'text-yellow-500';
+                        stateText = 'Pausado';
+                    } else if (service.state === 'NOT_FOUND') {
+                        stateClass = 'text-gray-500';
+                        stateText = 'No encontrado';
+                    } else if (service.state.includes('PENDING')) {
+                        stateClass = 'text-blue-500';
+                        stateText = service.state === 'START_PENDING' ? 'Iniciando' : 'Deteniendo';
+                    }
+                    
+                    // Determinar clase de tipo de inicio
+                    let startupClass = 'text-gray-400';
+                    let startupText = service.startup_type;
+                    
+                    if (service.startup_type === 'AUTO') {
+                        startupClass = 'text-green-500';
+                        startupText = 'Automático';
+                    } else if (service.startup_type === 'MANUAL') {
+                        startupClass = 'text-yellow-500';
+                        startupText = 'Manual';
+                    } else if (service.startup_type === 'DISABLED') {
+                        startupClass = 'text-red-500';
+                        startupText = 'Deshabilitado';
+                    }
+                    
+                    servicesContainer.innerHTML += `
+                        <tr class="hover:bg-slate-800">
+                            <td class="px-6 py-4">${service.display_name}</td>
+                            <td class="px-6 py-4"><span class="${stateClass} font-medium">${stateText}</span></td>
+                            <td class="px-6 py-4"><span class="${startupClass}">${startupText}</span></td>
+                        </tr>
+                    `;
+                });
+                
+                // Programar próxima actualización si aún estamos en esta pestaña
+                if (document.getElementById('content-services').classList.contains('hidden')) {
+                    return; // No seguir actualizando si la pestaña no está visible
+                }
+                
+                servicesUpdateInterval = setTimeout(() => {
+                    actualizarServiciosInfo(ipAddress);
+                }, 15000); // Actualizar cada 15 segundos
+            } else {
+                document.getElementById('services-list').innerHTML = '<tr><td colspan="3" class="px-6 py-4 text-red-400">No se pudo obtener información de servicios</td></tr>';
+            }
+        }
+        
+        // Función para ver detalles del servidor (redirige a la página de detalles)
+        function verDetallesServidor(serverId) {
+            window.location.href = `/static/server-details.html?id=${serverId}`;
+        }
+        
+        // Función para editar un servidor
+        function editarServidor(serverId) {
+            const server = servers.find(s => s.id === serverId);
+            if (!server) return;
+            
+            // Mostrar un diálogo modal con el formulario de edición
+            const nuevoNombre = prompt("Nuevo nombre para el servidor:", server.name);
+            
+            if (nuevoNombre !== null && nuevoNombre.trim() !== "") {
+                // Actualizar el nombre del servidor en el array local
+                server.name = nuevoNombre.trim();
+                
+                // Guardar los cambios en el almacenamiento local para persistencia
+                localStorage.setItem('servers', JSON.stringify(servers));
+                
+                // Actualizar la interfaz
+                renderizarServidores();
+                
+                alert(`Servidor "${nuevoNombre}" actualizado correctamente.`);
+            }
+        }
+    </script>
+</body>
+</html>

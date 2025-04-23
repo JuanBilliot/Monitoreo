@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NetFlow - Monitoreo de Servidores</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@6.5.95/css/materialdesignicons.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary': '#3b82f6',
+                        'primary-dark': '#2563eb',
+                        'surface': '#1e293b'
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body class="bg-gray-900 text-white">
+    <div class="flex items-center justify-center min-h-screen px-4">
+        <div class="w-full max-w-md">
+            <!-- Logo y Título -->
+            <div class="text-center mb-10">
+                <div class="flex justify-center mb-4">
+                    <div class="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center">
+                        <i class="mdi mdi-server-network text-4xl"></i>
+                    </div>
+                </div>
+                <h1 class="text-4xl font-bold text-blue-500 mb-2">NetFlow</h1>
+                <h2 class="text-xl text-gray-400">Sistema de Monitoreo de Servidores</h2>
+            </div>
+            
+            <!-- Formulario de Login -->
+            <div class="bg-gray-800 rounded-lg p-8 shadow-lg">
+                <h3 class="text-xl font-semibold mb-6 text-center">Iniciar Sesión</h3>
+                
+                <div id="error-message" class="hidden bg-red-600 bg-opacity-20 border border-red-700 text-red-500 px-4 py-2 rounded mb-4">
+                    Usuario o contraseña incorrectos
+                </div>
+                
+                <form onsubmit="return loginDirecto(event)">
+                    <div class="mb-4">
+                        <label for="username" class="block text-gray-400 mb-2">Usuario</label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 flex items-center pl-3">
+                                <i class="mdi mdi-account text-gray-500"></i>
+                            </span>
+                            <input type="text" id="username" name="username" class="w-full py-2 pl-10 pr-3 bg-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Nombre de usuario" required>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-6">
+                        <label for="password" class="block text-gray-400 mb-2">Contraseña</label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 flex items-center pl-3">
+                                <i class="mdi mdi-lock text-gray-500"></i>
+                            </span>
+                            <input type="password" id="password" name="password" class="w-full py-2 pl-10 pr-3 bg-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Contraseña" required autocomplete="off">
+                        </div>
+                    </div>
+                    
+                    <button type="submit" id="submit-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        Ingresar
+                    </button>
+                </form>
+            </div>
+            
+            <!-- Nota de acceso para desarrollo -->
+            <div class="mt-6 text-center text-sm text-gray-500">
+                <p>Para desarrollo: usuario <span class="text-blue-400">admin</span>, contraseña <span class="text-blue-400">password</span></p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Función simplificada para login directo
+        function loginDirecto(event) {
+            event.preventDefault();
+            
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            // Lista de usuarios válidos
+            const usuarios = [
+                {u: "admin", p: "password"},
+                {u: "juan.billiot", p: "jua.3256"},
+                {u: "gabriel.machado", p: "gab.2021"},
+                {u: "admin", p: "admin123"}
+            ];
+            
+            // Verificar credenciales
+            let loginCorrecto = false;
+            
+            for (let i = 0; i < usuarios.length; i++) {
+                if (username === usuarios[i].u && password === usuarios[i].p) {
+                    loginCorrecto = true;
+                    break;
+                }
+            }
+            
+            if (loginCorrecto) {
+                console.log('Login exitoso, redirigiendo...');
+                window.location.href = '/static/dashboard.html';
+                return false;
+            } else {
+                document.getElementById('error-message').classList.remove('hidden');
+                return false;
+            }
+        }
+    </script>
+</body>
+</html>
