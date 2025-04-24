@@ -1,0 +1,4 @@
+[submodule "netflow/frontend-react"]
+	path = netflow/frontend-react
+	url = https://github.com/juanBilliot/Monitoreo.git
+	branch = frontend-react
