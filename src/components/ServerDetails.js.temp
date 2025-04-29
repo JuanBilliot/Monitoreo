@@ -1,0 +1,30 @@
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { 
+  Box, 
+  Typography, 
+  Paper, 
+  Grid, 
+  CircularProgress, 
+  IconButton,
+  AppBar,
+  Toolbar,
+  Snackbar,
+  Alert
+} from '@mui/material';
+import ComputerIcon from '@mui/icons-material/Computer';
+import MemoryIcon from '@mui/icons-material/Memory';
+import StorageIcon from '@mui/icons-material/Storage';
+import DnsIcon from '@mui/icons-material/Dns';
+import RouterIcon from '@mui/icons-material/Router';
+import LatencyChart from './LatencyChart';
+import EditServerDialog from './EditServerDialog';
+import NetworkCheckIcon from '@mui/icons-material/NetworkCheck';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+// SwapVertIcon eliminado ya que no se usa
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import EditIcon from '@mui/icons-material/Edit';
+import DescriptionIcon from '@mui/icons-material/Description';
+import DeveloperBoardIcon from '@mui/icons-material/DeveloperBoard';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';

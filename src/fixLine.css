@@ -1,0 +1,41 @@
+/* CSS específico para eliminar la línea blanca */
+html, body, #root {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background-color: #0a192f !important;
+  overflow: hidden !important;
+  height: 100% !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* Eliminar bordes en todos los elementos */
+* {
+  border: none !important;
+  box-sizing: border-box !important;
+}
+
+/* Estilos específicos para la barra de tareas */
+.MuiToolbar-root {
+  border-bottom: none !important;
+}
+
+/* Estilos para el contenedor principal */
+.MuiBox-root {
+  border: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Eliminar líneas en la parte inferior */
+.MuiContainer-root::after,
+.MuiBox-root::after,
+#root::after,
+body::after,
+html::after {
+  content: none !important;
+  display: none !important;
+  border: none !important;
+  background: none !important;
+}

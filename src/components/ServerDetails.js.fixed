@@ -1,0 +1,675 @@
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { 
+  Box, 
+  Typography, 
+  Paper, 
+  Grid, 
+  CircularProgress, 
+  IconButton,
+  AppBar,
+  Toolbar,
+  Snackbar,
+  Alert
+} from '@mui/material';
+import ComputerIcon from '@mui/icons-material/Computer';
+import MemoryIcon from '@mui/icons-material/Memory';
+import StorageIcon from '@mui/icons-material/Storage';
+import DnsIcon from '@mui/icons-material/Dns';
+import RouterIcon from '@mui/icons-material/Router';
+import LatencyChart from './LatencyChart';
+import EditServerDialog from './EditServerDialog';
+import NetworkCheckIcon from '@mui/icons-material/NetworkCheck';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import EditIcon from '@mui/icons-material/Edit';
+import DescriptionIcon from '@mui/icons-material/Description';
+import DeveloperBoardIcon from '@mui/icons-material/DeveloperBoard';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+
+const ServerDetails = () => {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const [server, setServer] = useState({
+    id: null,
+    name: '',
+    ip: '',
+    description: ''
+  });
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: '',
+    severity: 'success'
+  });
+  const [stats, setStats] = useState({
+    status: 'active',
+    lastLatency: 0,
+    minLatency: 0,
+    maxLatency: 0,
+    packetsSent: 0,
+    packetsReceived: 0,
+    packetLoss: 0,
+    lastUpdate: null,
+    monitoringStartTime: null
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [socket, setSocket] = useState(null);
+  const [simulationInterval, setSimulationInterval] = useState(null);
+
+  // Función para cargar servidores desde localStorage
+  const loadServers = () => {
+    try {
+      const serversData = localStorage.getItem('servers');
+      return serversData ? JSON.parse(serversData) : [];
+    } catch (error) {
+      console.error('Error al cargar servidores:', error);
+      return [];
+    }
+  };
+
+  // Efecto para cargar los datos del servidor
+  useEffect(() => {
+    const loadServerData = () => {
+      setLoading(true);
+      setError(null);
+      
+      const servers = loadServers();
+      const serverData = servers.find(s => s.id === parseInt(id));
+      
+      if (serverData) {
+        setServer({
+          id: serverData.id,
+          name: serverData.name,
+          ip: serverData.ip_address,
+          description: serverData.description || ''
+        });
+        
+        // Reiniciar los contadores de red y paquetes
+        setStats({
+          status: 'active',
+          lastLatency: 0,
+          minLatency: 0,
+          maxLatency: 0,
+          packetsSent: 0,
+          packetsReceived: 0,
+          packetLoss: 0,
+          cpu: {
+            usage: 0,
+            cores: 0,
+            temperature: 0,
+            model: ''
+          },
+          memory: {
+            total: 0,
+            used: 0,
+            free: 0,
+            percent: 0
+          },
+          disk: {
+            total: 0,
+            used: 0,
+            free: 0,
+            percent: 0
+          },
+          disks: [],
+          network: {
+            upload: 0,
+            download: 0,
+            totalSent: 0,
+            totalReceived: 0
+          },
+          latency: {
+            current: 0,
+            min: 0,
+            max: 0,
+            avg: 0,
+            history: []
+          },
+          system: {
+            hostname: '',
+            platform: '',
+            release: '',
+            uptime: 0,
+            arch: '',
+            processes: 0
+          },
+          lastUpdate: Date.now(),
+          monitoringStartTime: Date.now()
+        });
+        
+        console.log('Contadores reiniciados al iniciar el monitoreo');
+        setLoading(false);
+      } else {
+        setError('Servidor no encontrado');
+        setLoading(false);
+      }
+    };
+
+    loadServerData();
+  }, [id]);
+
+  // Manejar la conexión WebSocket
+  useEffect(() => {
+    // Solo intentar conectar si el servidor está cargado
+    if (server.id === null) return;
+
+    // Función para generar datos simulados
+    const generateSimulatedData = () => {
+      const now = new Date();
+      const packetsSent = stats.packetsSent + Math.floor(Math.random() * 5) + 1;
+      const packetsReceived = stats.packetsReceived + Math.floor(Math.random() * 5);
+      const packetLoss = packetsSent > 0 ? ((packetsSent - packetsReceived) / packetsSent * 100) : 0;
+      
+      // Generar un valor de latencia aleatorio entre 20 y 100 ms
+      const latency = Math.random() * 80 + 20;
+      
+      // Actualizar el historial de latencia
+      const latencyHistory = stats.latency && stats.latency.history ? [...stats.latency.history] : [];
+      if (latencyHistory.length >= 20) {
+        latencyHistory.shift(); // Eliminar el elemento más antiguo si ya hay 20
+      }
+      latencyHistory.push(latency);
+      
+      // Calcular estadísticas de latencia
+      const minLatency = Math.min(...latencyHistory);
+      const maxLatency = Math.max(...latencyHistory);
+      const avgLatency = latencyHistory.reduce((a, b) => a + b, 0) / latencyHistory.length;
+      
+      // Actualizar los stats
+      setStats({
+        ...stats,
+        status: 'active',
+        lastLatency: latency,
+        minLatency,
+        maxLatency,
+        packetsSent,
+        packetsReceived,
+        packetLoss,
+        cpu: {
+          usage: Math.random() * 100,
+          cores: 8,
+          temperature: Math.random() * 20 + 40,
+          model: 'Intel Core i7-9700K'
+        },
+        memory: {
+          total: 16 * 1024 * 1024 * 1024, // 16 GB
+          used: Math.random() * 8 * 1024 * 1024 * 1024, // 0-8 GB
+          free: 8 * 1024 * 1024 * 1024, // 8 GB
+          percent: Math.random() * 100
+        },
+        disk: {
+          total: 512 * 1024 * 1024 * 1024, // 512 GB
+          used: Math.random() * 256 * 1024 * 1024 * 1024, // 0-256 GB
+          free: 256 * 1024 * 1024 * 1024, // 256 GB
+          percent: Math.random() * 100
+        },
+        disks: [
+          {
+            device: '/dev/sda1',
+            mountpoint: '/',
+            fstype: 'ext4',
+            total: 512 * 1024 * 1024 * 1024,
+            used: Math.random() * 256 * 1024 * 1024 * 1024,
+            free: 256 * 1024 * 1024 * 1024,
+            percent: Math.random() * 100
+          },
+          {
+            device: '/dev/sdb1',
+            mountpoint: '/data',
+            fstype: 'ext4',
+            total: 1024 * 1024 * 1024 * 1024,
+            used: Math.random() * 512 * 1024 * 1024 * 1024,
+            free: 512 * 1024 * 1024 * 1024,
+            percent: Math.random() * 100
+          }
+        ],
+        network: {
+          upload: Math.random() * 10 * 1024 * 1024, // 0-10 MB/s
+          download: Math.random() * 50 * 1024 * 1024, // 0-50 MB/s
+          totalSent: stats.network ? stats.network.totalSent + Math.random() * 10 * 1024 * 1024 : 0,
+          totalReceived: stats.network ? stats.network.totalReceived + Math.random() * 50 * 1024 * 1024 : 0
+        },
+        latency: {
+          current: latency,
+          min: minLatency,
+          max: maxLatency,
+          avg: avgLatency,
+          history: latencyHistory
+        },
+        system: {
+          hostname: 'server-' + server.id,
+          platform: 'linux',
+          release: '5.4.0-42-generic',
+          uptime: Math.floor(Date.now() / 1000) - (stats.monitoringStartTime ? Math.floor(stats.monitoringStartTime / 1000) : 0),
+          arch: 'x64',
+          processes: Math.floor(Math.random() * 100) + 100
+        },
+        lastUpdate: Date.now()
+      });
+    };
+
+    // Intentar conectar al WebSocket
+    const connectWebSocket = () => {
+      try {
+        // Simular datos en lugar de conectar a un WebSocket real
+        const interval = setInterval(generateSimulatedData, 2000);
+        setSimulationInterval(interval);
+        
+        console.log('Simulación de datos iniciada');
+        
+        // Generar datos iniciales inmediatamente
+        generateSimulatedData();
+        
+        return () => {
+          clearInterval(interval);
+          console.log('Simulación de datos detenida');
+        };
+      } catch (error) {
+        console.error('Error al conectar WebSocket:', error);
+        setError('Error al conectar con el servidor');
+        return () => {};
+      }
+    };
+
+    // Conectar al WebSocket
+    const cleanup = connectWebSocket();
+    
+    // Limpiar al desmontar
+    return () => {
+      cleanup();
+      if (simulationInterval) {
+        clearInterval(simulationInterval);
+      }
+    };
+  }, [server.id, server.ip, stats]);
+
+  // Función para generar datos de latencia para el gráfico
+  const generateLatencyData = () => {
+    const now = new Date();
+    const data = [];
+
+    for (let i = 0; i < 20; i++) {
+      const time = new Date(now - (19 - i) * 60000);
+      const timeString = time.getHours().toString().padStart(2, '0') + ':' +
+        time.getMinutes().toString().padStart(2, '0');
+
+      let value;
+      if (stats.latency && stats.latency.history && stats.latency.history[i]) {
+        value = typeof stats.latency.history[i] === 'number'
+          ? stats.latency.history[i]
+          : parseFloat(stats.latency.history[i]) || 0;
+      } else {
+        if (i === 5 || i === 15) {
+          value = Math.random() * 100 + 50;
+        } else {
+          value = Math.random() * 30 + 20;
+        }
+      }
+
+      data.push({
+        time: timeString,
+        value: parseFloat(value.toFixed(2))
+      });
+    }
+
+    return data;
+  };
+
+  // Función para manejar la edición del servidor
+  const handleEditSave = (editedServer) => {
+    // Actualizar el servidor en localStorage
+    const servers = loadServers();
+    const updatedServers = servers.map(s => 
+      s.id === editedServer.id 
+        ? { 
+            ...s, 
+            name: editedServer.name, 
+            description: editedServer.description 
+          } 
+        : s
+    );
+    
+    localStorage.setItem('servers', JSON.stringify(updatedServers));
+    
+    // Actualizar el estado local
+    setServer({
+      ...server,
+      name: editedServer.name,
+      description: editedServer.description
+    });
+    
+    // Mostrar notificación
+    setSnackbar({
+      open: true,
+      message: 'Servidor actualizado correctamente',
+      severity: 'success'
+    });
+    
+    // Cerrar el diálogo
+    setEditDialogOpen(false);
+  };
+
+  // Función para formatear bytes
+  const formatBytes = (bytes, decimals = 2) => {
+    if (bytes === 0) return '0 B';
+    
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+    
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+  };
+
+  // Función para formatear la velocidad
+  const formatSpeed = (bytesPerSecond) => {
+    return formatBytes(bytesPerSecond) + '/s';
+  };
+
+  // Función para formatear el tiempo de actividad
+  const formatUptime = (seconds) => {
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    
+    let result = '';
+    if (days > 0) result += `${days}d `;
+    if (hours > 0 || days > 0) result += `${hours}h `;
+    result += `${minutes}m`;
+    
+    return result;
+  };
+
+  // Si está cargando, mostrar spinner
+  if (loading) {
+    return (
+      <Box 
+        sx={{ 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          height: '100vh',
+          backgroundColor: '#0a192f'
+        }}
+      >
+        <CircularProgress sx={{ color: '#64ffda' }} />
+      </Box>
+    );
+  }
+
+  // Si hay error, mostrar mensaje
+  if (error) {
+    return (
+      <Box 
+        sx={{ 
+          display: 'flex', 
+          flexDirection: 'column',
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          height: '100vh',
+          backgroundColor: '#0a192f',
+          color: '#8892b0'
+        }}
+      >
+        <Typography variant="h5" sx={{ color: '#ff5555', mb: 2 }}>
+          {error}
+        </Typography>
+        <Button 
+          variant="outlined" 
+          startIcon={<ArrowBackIcon />}
+          onClick={() => navigate('/')}
+          sx={{ 
+            color: '#64ffda', 
+            borderColor: '#64ffda',
+            '&:hover': {
+              borderColor: '#64ffda',
+              backgroundColor: 'rgba(100, 255, 218, 0.1)'
+            }
+          }}
+        >
+          Volver al inicio
+        </Button>
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={{ backgroundColor: '#0a192f', minHeight: '100vh', pb: 4 }}>
+      <AppBar position="static" sx={{ backgroundColor: 'rgba(10, 25, 47, 0.9)', boxShadow: 'none', borderBottom: '1px solid rgba(100, 255, 218, 0.1)' }}>
+        <Toolbar>
+          <IconButton
+            edge="start"
+            color="inherit"
+            aria-label="back"
+            onClick={() => navigate('/')}
+            sx={{ mr: 2, color: '#64ffda' }}
+          >
+            <ArrowBackIcon />
+          </IconButton>
+          <Typography variant="h6" component="div" sx={{ flexGrow: 1, color: '#ccd6f6' }}>
+            {server.name}
+          </Typography>
+          <IconButton 
+            color="inherit" 
+            aria-label="edit"
+            onClick={() => setEditDialogOpen(true)}
+            sx={{ color: '#64ffda' }}
+          >
+            <EditIcon />
+          </IconButton>
+        </Toolbar>
+      </AppBar>
+
+      <Box sx={{ p: 3 }}>
+        <Typography variant="h4" sx={{ color: '#ccd6f6', mb: 1, fontWeight: 600 }}>
+          {server.name}
+        </Typography>
+        <Typography variant="body1" sx={{ color: '#8892b0', mb: 3 }}>
+          {server.ip} - {server.description || 'Sin descripción'}
+        </Typography>
+
+        <Grid container spacing={3}>
+          <Grid item xs={12} md={8}>
+            <Paper 
+              elevation={0}
+              sx={{ 
+                p: 3, 
+                borderRadius: '10px', 
+                backgroundColor: 'rgba(10, 25, 47, 0.7)',
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(100, 255, 218, 0.1)',
+                height: '100%'
+              }}
+            >
+              <Box sx={{ mb: 2, display: 'flex', alignItems: 'center' }}>
+                <SpeedIcon sx={{ color: '#64ffda', mr: 1 }} />
+                <Typography variant="h6" sx={{ color: '#64ffda', fontWeight: 600 }}>
+                  Latencia
+                </Typography>
+              </Box>
+              <Box 
+                sx={{ 
+                  height: '300px', 
+                  width: '100%',
+                  position: 'relative'
+                }}
+              >
+                <LatencyChart latencyData={generateLatencyData()} />
+              </Box>
+            </Paper>
+          </Grid>
+
+          <Grid item xs={12} md={4}>
+            <Paper 
+              elevation={0}
+              sx={{ 
+                p: 3, 
+                borderRadius: '10px', 
+                backgroundColor: 'rgba(10, 25, 47, 0.7)',
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(100, 255, 218, 0.1)',
+                height: '100%'
+              }}
+            >
+              <Box sx={{ mb: 2, display: 'flex', alignItems: 'center' }}>
+                <NetworkCheckIcon sx={{ color: '#ff79c6', mr: 1 }} />
+                <Typography variant="h6" sx={{ color: '#ff79c6', fontWeight: 600 }}>
+                  Red
+                </Typography>
+              </Box>
+              
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Box sx={{ display: 'flex', gap: 2 }}>
+                  <Box sx={{ 
+                    p: 2, 
+                    borderRadius: '8px', 
+                    backgroundColor: 'rgba(100, 255, 218, 0.05)',
+                    border: '1px solid rgba(100, 255, 218, 0.1)',
+                    flex: 1,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.3s ease',
+                    '&:hover': {
+                      backgroundColor: 'rgba(100, 255, 218, 0.08)',
+                      transform: 'translateY(-2px)'
+                    }
+                  }}>
+                    <Typography variant="caption" sx={{ color: '#8892b0', mb: 1 }}>
+                      Paquetes Enviados
+                    </Typography>
+                    <Typography variant="h6" sx={{ 
+                      color: '#64ffda', 
+                      fontWeight: 700,
+                      textShadow: '0 0 5px rgba(100, 255, 218, 0.5)'
+                    }}>
+                      {stats.packetsSent}
+                    </Typography>
+                  </Box>
+                  
+                  <Box sx={{ 
+                    p: 2, 
+                    borderRadius: '8px', 
+                    backgroundColor: 'rgba(139, 233, 253, 0.05)',
+                    border: '1px solid rgba(139, 233, 253, 0.1)',
+                    flex: 1,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.3s ease',
+                    '&:hover': {
+                      backgroundColor: 'rgba(139, 233, 253, 0.08)',
+                      transform: 'translateY(-2px)'
+                    }
+                  }}>
+                    <Typography variant="caption" sx={{ color: '#8892b0', mb: 1 }}>
+                      Paquetes Recibidos
+                    </Typography>
+                    <Typography variant="h6" sx={{ 
+                      color: '#8be9fd', 
+                      fontWeight: 700,
+                      textShadow: '0 0 5px rgba(139, 233, 253, 0.5)'
+                    }}>
+                      {stats.packetsReceived}
+                    </Typography>
+                  </Box>
+                </Box>
+
+                <Box sx={{ 
+                  p: 2, 
+                  borderRadius: '8px', 
+                  backgroundColor: 'rgba(255, 121, 198, 0.05)',
+                  border: '1px solid rgba(255, 121, 198, 0.1)',
+                  mb: 2,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  transition: 'all 0.3s ease',
+                  '&:hover': {
+                    backgroundColor: 'rgba(255, 121, 198, 0.08)',
+                    transform: 'translateY(-2px)'
+                  }
+                }}>
+                  <Box>
+                    <Typography variant="caption" sx={{ color: '#8892b0', display: 'block' }}>
+                      Paquetes Perdidos
+                    </Typography>
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        color: stats.packetsSent > 0 && ((stats.packetsSent - stats.packetsReceived) > 10) ? '#ff5555' : '#ccd6f6', 
+                        fontWeight: 500,
+                        display: 'flex',
+                        alignItems: 'center'
+                      }}
+                    >
+                      {stats.packetsSent > 0 ? (stats.packetsSent - stats.packetsReceived) : 0} paquetes
+                      {stats.packetsSent > 0 && ((stats.packetsSent - stats.packetsReceived) > 10) && (
+                        <span style={{ 
+                          fontSize: '10px', 
+                          color: '#ff5555', 
+                          marginLeft: '5px',
+                          padding: '2px 5px',
+                          backgroundColor: 'rgba(255, 85, 85, 0.1)',
+                          borderRadius: '4px'
+                        }}>
+                          Alerta
+                        </span>
+                      )}
+                    </Typography>
+                  </Box>
+                  <Box 
+                    sx={{ 
+                      width: '40px', 
+                      height: '40px', 
+                      borderRadius: '50%', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      backgroundColor: stats.packetsSent > 0 && ((stats.packetsSent - stats.packetsReceived) > 10) ? 'rgba(255, 85, 85, 0.1)' : 'rgba(255, 121, 198, 0.1)',
+                      boxShadow: stats.packetsSent > 0 && ((stats.packetsSent - stats.packetsReceived) > 10) ? '0 0 10px rgba(255, 85, 85, 0.2)' : '0 0 10px rgba(255, 121, 198, 0.2)'
+                    }}
+                  >
+                    <ErrorOutlineIcon sx={{ color: stats.packetsSent > 0 && ((stats.packetsSent - stats.packetsReceived) > 10) ? '#ff5555' : '#ff79c6' }} />
+                  </Box>
+                </Box>
+              </Box>
+            </Paper>
+          </Grid>
+        </Grid>
+      </Box>
+
+      {/* Diálogo de edición */}
+      <EditServerDialog
+        open={editDialogOpen}
+        server={server}
+        onClose={() => setEditDialogOpen(false)}
+        onSave={handleEditSave}
+      />
+
+      {/* Snackbar para notificaciones */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+      >
+        <Alert 
+          onClose={() => setSnackbar({ ...snackbar, open: false })} 
+          severity={snackbar.severity} 
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+    </Box>
+  );
+};
+
+export default ServerDetails;

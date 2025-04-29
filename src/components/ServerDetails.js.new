@@ -1,0 +1,156 @@
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { 
+  Box, 
+  Typography, 
+  Paper, 
+  Grid, 
+  CircularProgress, 
+  IconButton,
+  AppBar,
+  Toolbar,
+  Snackbar,
+  Alert
+} from '@mui/material';
+import ComputerIcon from '@mui/icons-material/Computer';
+import MemoryIcon from '@mui/icons-material/Memory';
+import StorageIcon from '@mui/icons-material/Storage';
+import DnsIcon from '@mui/icons-material/Dns';
+import RouterIcon from '@mui/icons-material/Router';
+import LatencyChart from './LatencyChart';
+import EditServerDialog from './EditServerDialog';
+import NetworkCheckIcon from '@mui/icons-material/NetworkCheck';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+// SwapVertIcon eliminado ya que no se usa
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import EditIcon from '@mui/icons-material/Edit';
+import DescriptionIcon from '@mui/icons-material/Description';
+import DeveloperBoardIcon from '@mui/icons-material/DeveloperBoard';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+
+const ServerDetails = () => {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const [server, setServer] = useState({
+    id: null,
+    name: '',
+    ip: '',
+    description: ''
+  });
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: '',
+    severity: 'success'
+  });
+  const [stats, setStats] = useState({
+    status: 'active',
+    lastLatency: 0,
+    minLatency: 0,
+    maxLatency: 0,
+    packetsSent: 0,
+    packetsReceived: 0,
+    packetLoss: 0,
+    lastUpdate: null,
+    monitoringStartTime: null
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [socket, setSocket] = useState(null);
+  const [simulationInterval, setSimulationInterval] = useState(null);
+
+  // Función para cargar servidores desde localStorage
+  const loadServers = () => {
+    try {
+      const serversData = localStorage.getItem('servers');
+      return serversData ? JSON.parse(serversData) : [];
+    } catch (error) {
+      console.error('Error al cargar servidores:', error);
+      return [];
+    }
+  };
+
+  // Efecto para cargar los datos del servidor
+  useEffect(() => {
+    const loadServerData = () => {
+      setLoading(true);
+      setError(null);
+      
+      const servers = loadServers();
+      const serverData = servers.find(s => s.id === parseInt(id));
+      
+      if (serverData) {
+        setServer({
+          id: serverData.id,
+          name: serverData.name,
+          ip: serverData.ip_address,
+          description: serverData.description || ''
+        });
+        
+        // Reiniciar los contadores de red y paquetes
+        setStats({
+          status: 'active',
+          lastLatency: 0,
+          minLatency: 0,
+          maxLatency: 0,
+          packetsSent: 0,
+          packetsReceived: 0,
+          packetLoss: 0,
+          cpu: {
+            usage: 0,
+            cores: 0,
+            temperature: 0,
+            model: ''
+          },
+          memory: {
+            total: 0,
+            used: 0,
+            free: 0,
+            percent: 0
+          },
+          disk: {
+            total: 0,
+            used: 0,
+            free: 0,
+            percent: 0
+          },
+          disks: [],
+          network: {
+            upload: 0,
+            download: 0,
+            totalSent: 0,
+            totalReceived: 0
+          },
+          latency: {
+            current: 0,
+            min: 0,
+            max: 0,
+            avg: 0,
+            history: []
+          },
+          system: {
+            hostname: '',
+            platform: '',
+            release: '',
+            uptime: 0,
+            arch: '',
+            processes: 0
+          },
+          lastUpdate: Date.now(),
+          monitoringStartTime: Date.now()
+        });
+        
+        console.log('Contadores reiniciados al iniciar el monitoreo');
+        setLoading(false);
+      } else {
+        setError('Servidor no encontrado');
+        setLoading(false);
+      }
+    };
+
+    loadServerData();
+  }, [id]);
+
+  // Resto del código del componente...
