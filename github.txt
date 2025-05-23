@@ -1,0 +1,23 @@
+Datps importante de la app
+
+forzar push a GitHub: 
+git push --force origin main
+
+
+estos son los pasos para el commit correcto
+
+
+git add .
+git commit -m "Descripción de los cambios realizados"
+git push origin main --force
+
+---------------------------------------------------------------------------
+// acceso a blackbox
+https://www.blackbox.ai/
+
+---------------------------------------------------------------------------
+Datos de conexion desl sophos 
+usuario: sophosauditor
+contraseña: 1S0ph02!23.SC
+
+---------------------------------------------------------------------------

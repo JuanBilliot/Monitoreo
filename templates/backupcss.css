@@ -1,0 +1,230 @@
+
+/* Estilos generales */
+body {
+    font-family: 'Segoe UI', sans-serif;
+    background-color: var(--background-color);
+    color: var(--primary-color);
+}
+
+/* Encabezado del Dashboard */
+.dashboard-header {
+    background-color: var(--sidebar-color);
+    color: #ffffff;
+    padding: 10px;
+    border-radius: 8px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+/* Sección de Servidores */
+.servers-section {
+    margin-top: 20px;
+}
+
+.section-title {
+    font-size: 1.5em;
+    margin-bottom: 15px;
+}
+
+/* Diseño de Tarjetas de Servidor */
+.servers-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px; /* Espacio entre tarjetas */
+}
+
+.server-card {
+    background-color: var(--white);
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    transition: transform 0.3s, box-shadow 0.3s;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between; /* Asegura que los elementos estén distribuidos uniformemente */
+}
+
+/* Encabezado de la Tarjeta */
+.server-header {
+    display: flex;
+    flex-direction: column; /* Cambiar a columna para que los botones estén debajo */
+    align-items: flex-start; /* Alinear a la izquierda */
+    margin-bottom: 15px; /* Espacio inferior */
+    background-color: var(--primary-color); /* Fondo para el encabezado */
+    color: var(--white); /* Color de texto blanco */
+    padding: 10px; /* Espaciado interno */
+    border-radius: 5px; /* Bordes redondeados */
+}
+
+.server-title {
+    color: rgb(255, 255, 255) !important; /* Cambia el color del texto a azul */
+    font-size: 20px; /* Ajusta el tamaño de la fuente si es necesario */
+    margin-bottom: 10px; /* Espacio inferior si es necesario */
+}
+
+/* Estilo para la Información del Servidor */
+.server-info {
+    margin: 10px 0;
+    font-size: 1em; /* Aumentar el tamaño de la fuente */
+    color: var(--secondary-color);
+}
+
+/* Estilo para IP y DynDNS */
+.terminal {
+    background-color: #e9ecef; /* Fondo claro */
+    color: #343a40; /* Texto oscuro para mejor legibilidad */
+    padding: 5px; /* Espaciado interno */
+    border-radius: 5px; /* Bordes redondeados */
+    display: inline-block; /* Para que el fondo se ajuste al texto */
+    font-weight: bold; /* Negrita para mayor énfasis */
+}
+
+/* Estilo de los Botones */
+.button-group {
+    display: flex;
+    gap: 10px; /* Espacio entre botones */
+    margin-top: 10px; /* Espacio superior para separar de la tarjeta */
+}
+
+.btn {
+    padding: 10px 15px;
+    border-radius: 5px;
+    font-size: 1em; /* Aumentar el tamaño de la fuente */
+    transition: background-color 0.3s, transform 0.3s;
+    flex: 1; /* Hacer que los botones ocupen el mismo ancho */
+    text-align: center; /* Centrar el texto en los botones */
+    min-width: 100px; /* Asegurar un ancho mínimo para los botones */
+}
+
+.btn-primary {
+    background-color: var(--accent-color);
+    color: var(--white);
+}
+
+.btn-primary:hover {
+    background-color: var(--blue-color);
+    transform: scale(1.05);
+}
+
+.btn-danger {
+    background-color: var(--red-color);
+    color: var(--white);
+}
+
+.btn-danger:hover {
+    background-color: darkred;
+    transform: scale(1.05);
+}
+
+.btn-info {
+    background-color: var(--blue-color);
+    color: var(--white);
+}
+
+.btn-info:hover {
+    background-color: darkblue;
+    transform: scale(1.05);
+}
+
+/* Estilos para el Modal */
+.modal-content {
+    border-radius: 10px; /* Bordes redondeados para el modal */
+}
+
+/* Estilo para el encabezado del modal */
+.modal-header {
+    background-color: var(--primary-color);
+    color: var(--white);
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+}
+
+/* Estilos para la sección de edición de servidores */
+.edit-server-section {
+    background-color: var(--white);
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Estilo para el título de la sección */
+.section-title {
+    font-size: 24px;
+    margin-bottom: 20px;
+    color: var(--primary-color);
+}
+
+/* Estilos para el formulario */
+.form-group {
+    margin-bottom: 15px; /* Espacio inferior entre los grupos de formulario */
+}
+
+.form-group label {
+    font-weight: bold; /* Negrita para las etiquetas */
+    margin-bottom: 5px; /* Espacio inferior para las etiquetas */
+    display: block; /* Asegura que las etiquetas ocupen toda la línea */
+}
+
+.form-control {
+    width: 100%; /* Asegura que los campos de entrada ocupen todo el ancho */
+    padding: 10px; /* Espaciado interno */
+    border: 1px solid #ced4da; /* Borde gris claro */
+    border-radius: 5px; /* Bordes redondeados */
+    font-size: 1em; /* Tamaño de fuente */
+    color: #495057; /* Color de texto */
+    transition: border-color 0.3s; /* Transición suave para el borde */
+}
+
+.form-control:focus {
+    border-color: var(--primary-color); /* Cambia el color del borde al enfocar */
+    outline: none; /* Elimina el contorno predeterminado */
+}
+
+/* Estilo de los Botones */
+.button-group {
+    display: flex;
+    gap: 10px; /* Espacio entre botones */
+    margin-top: 20px; /* Espacio superior para separar del formulario */
+}
+
+.btn {
+    padding: 10px 15px;
+    border-radius: 5px;
+    font-size: 1em; /* Aumentar el tamaño de la fuente */
+    transition: background-color 0.3s, transform 0.3s;
+    flex: 1; /* Hacer que los botones ocupen el mismo ancho */
+    text-align: center; /* Centrar el texto en los botones */
+    min-width: 100px; /* Asegurar un ancho mínimo para los botones */
+}
+
+.btn-primary {
+    background-color: var(--accent-color);
+    color: var(--white);
+}
+
+.btn-primary:hover {
+    background-color: var(--blue-color);
+    transform: scale(1.05);
+}
+
+.btn-secondary {
+    background-color: #6c757d; /* Color gris para el botón de cancelar */
+    color: var(--white);
+}
+
+.btn-secondary:hover {
+    background-color: #5a6268; /* Color gris más oscuro al pasar el mouse */
+}
+
+/* Estilos para la tarjeta */
+.card {
+    margin-left: 500px; /* Espacio a la izquierda para evitar superposición */
+    margin-right: 20px; /* Espacio a la derecha */
+    border-radius: 10px; /* Bordes redondeados */
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); /* Sombra para la tarjeta */
+}
+
+.card-header {
+    background-color: var(--primary-color); /* Color de fondo del encabezado */
+    color: white; /* Color del texto en el encabezado */
+    padding: 10px; /* Espaciado interno del encabezado */
+}

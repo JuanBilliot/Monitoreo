@@ -1,0 +1,10 @@
+flask==2.1.0
+pandas==1.4.2
+matplotlib==3.5.1
+python-dotenv==0.20.0
+openpyxl==3.0.9
+requests==2.27.1
+gunicorn==20.1.0
+sqlalchemy==1.4.36
+flask-sse==0.4.0
+redis==4.5.4

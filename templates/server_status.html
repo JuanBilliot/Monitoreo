@@ -1,0 +1,803 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <!-- Sidebar -->
+    {% include 'sidebar.html' %}
+
+    <!-- Contenido Principal -->
+    <div class="main-content">
+        <div class="dashboard-header">
+            <h1 class="dashboard-header">Datos de Conexión en Sucursales</h1>
+        </div>
+        <div class="dashboard-section servers-section">
+            <h2 class="section-title">Sucursales</h2>
+            <div class="servers-grid">
+                {% for server in servers %}
+                <div class="server-card">
+                    <div class="server-header">
+                        <h3 class="server-title">{{ server['branch'] }} ({{ server['branch_code'] }})</h3>
+                        <div class="button-group">
+                            <a href="{{ url_for('edit_server', server_id=server['id']) }}" class="btn btn-primary">Editar</a>
+                            <button class="btn btn-danger delete-server" data-id="{{ server['id'] }}">Eliminar</button>
+                        </div>
+                    </div>
+                    <div class="server-details">
+                        <div class="server-info">
+                            <strong>Proveedor Principal:</strong> {{ server['primary_service_provider'] }} ({{ server['primary_service_speed'] }})
+                        </div>
+                        <div class="server-info">
+                            <strong>IP Principal:</strong> <span class="terminal">{{ server['primary_service_ip'] }}</span>
+                            <div class="button-group">
+                                <button class="btn btn-sm btn-info ping-server" data-ip="{{ server['primary_service_ip'] }}">Ping</button>
+                            </div>
+                        </div>
+                        {% if server['secondary_service_ip'] %}
+                        <div class="server-info">
+                            <strong>Proveedor Secundario:</strong> {{ server['secondary_service_provider'] }} ({{ server['secondary_service_speed'] }})
+                        </div>
+                        <div class="server-info">
+                            <strong>IP Secundaria:</strong> <span class="terminal">{{ server['secondary_service_ip'] }}</span>
+                            <div class="button-group">
+                                <button class="btn btn-sm btn-info ping-server" data-ip="{{ server['secondary_service_ip'] }}">Ping</button>
+                            </div>
+                        </div>
+                        {% endif %}
+                        {% if server['dyndns'] %}
+                        <div class="server-info">
+                            <strong>DynDNS:</strong> <span class="terminal"><a href="{{ server['dyndns'] }}" target="_blank">{{ server['dyndns'] }}</a></span>
+                        </div>
+                        {% endif %}
+                        <div class="monitor-buttons">
+                            <div class="monitor-group">
+                                <button class="btn btn-sm start-monitor" data-ip="{{ server['primary_service_ip'] }}" data-id="{{ server['id'] }}" data-service="primary">Monitorear Principal</button>
+                                {% if server['secondary_service_ip'] %}
+                                <button class="btn btn-sm start-monitor" data-ip="{{ server['secondary_service_ip'] }}" data-id="{{ server['id'] }}" data-service="secondary">Monitorear Secundario</button>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="ping-monitor primary-monitor" style="display: none;">
+                            <div class="chart-container">
+                                <canvas id="pingChart-{{ server['id'] }}-primary" style="height: 100%; width: 100%;"></canvas>
+                            </div>
+                            <div class="ping-stats-grid">
+                                <div class="stat-column">
+                                    <div class="stat-item">
+                                        <span class="stat-label">Lat (P):</span>
+                                        <span class="latency" data-id="{{ server['id'] }}" data-service="primary">-- ms</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Perd %:</span>
+                                        <span class="loss" data-id="{{ server['id'] }}" data-service="primary">--%</span>
+                                    </div>
+                                </div>
+                                <div class="stat-column">
+                                    <div class="stat-item">
+                                        <span class="stat-label">Lat (S):</span>
+                                        <span class="latency" data-id="{{ server['id'] }}" data-service="primary">-- ms</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Paq Perd:</span>
+                                        <span class="packet-loss-count" data-id="{{ server['id'] }}" data-service="primary">0</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% if server['secondary_service_ip'] %}
+                        <div class="ping-monitor secondary-monitor" style="display: none;">
+                            <div class="chart-container">
+                                <canvas id="pingChart-{{ server['id'] }}-secondary" style="height: 100%; width: 100%;"></canvas>
+                            </div>
+                            <div class="ping-stats-grid">
+                                <div class="stat-column">
+                                    <div class="stat-item">
+                                        <span class="stat-label">Lat (P):</span>
+                                        <span class="latency" data-id="{{ server['id'] }}" data-service="secondary">-- ms</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Perd %:</span>
+                                        <span class="loss" data-id="{{ server['id'] }}" data-service="secondary">--%</span>
+                                    </div>
+                                </div>
+                                <div class="stat-column">
+                                    <div class="stat-item">
+                                        <span class="stat-label">Lat (S):</span>
+                                        <span class="latency" data-id="{{ server['id'] }}" data-service="secondary">-- ms</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Paq Perd:</span>
+                                        <span class="packet-loss-count" data-id="{{ server['id'] }}" data-service="secondary">0</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="server-card">
+            <h3 class="server-title">Nuevo Server</h3>
+            <button class="edit-server-button" onclick="openEditServerForm('')">Agregar Servidor</button>
+        </div>
+        <!-- Sección de Edición de Servidor -->
+        <div class="dashboard-section edit-server-section" style="display: none;">
+            <h2 class="section-title">Editar Servidor</h2>
+            {% if server %}
+            <form method="POST" action="{{ url_for('edit_server', server_id=server.id) }}">
+                <div class="form-group">
+                    <label for="branch">Sucursal</label>
+                    <input type="text" id="branch" name="branch" class="form-control" value="{{ server.branch }}" required>
+                </div>
+                <div class="form-group">
+                    <label for="branch_code">Código de Sucursal</label>
+                    <input type="text" id="branch_code" name="branch_code" class="form-control" value="{{ server.branch_code }}" required>
+                </div>
+                <div class="form-group">
+                    <label for="dyndns">DynDNS</label>
+                    <input type="text" id="dyndns" name="dyndns" class="form-control" value="{{ server.dyndns }}">
+                </div>
+                <div class="form-group">
+                    <label for="primary_service_provider">Proveedor Principal</label>
+                    <input type="text" id="primary_service_provider" name="primary_service_provider" class="form-control" value="{{ server.primary_service_provider }}" required>
+                </div>
+                <div class="form-group">
+                    <label for="primary_service_ip">IP Principal</label>
+                    <input type="text" id="primary_service_ip" name="primary_service_ip" class="form-control" value="{{ server.primary_service_ip }}" required>
+                </div>
+                <div class="form-group">
+                    <label for="primary_service_speed">Velocidad Principal</label>
+                    <input type="text" id="primary_service_speed" name="primary_service_speed" class="form-control" value="{{ server.primary_service_speed }}" required>
+                </div>
+                <div class="form-group">
+                    <label for="secondary_service_provider">Proveedor Secundario</label>
+                    <input type="text" id="secondary_service_provider" name="secondary_service_provider" class="form-control" value="{{ server.secondary_service_provider }}">
+                </div>
+                <div class="form-group">
+                    <label for="secondary_service_ip">IP Secundaria</label>
+                    <input type="text" id="secondary_service_ip" name="secondary_service_ip" class="form-control" value="{{ server.secondary_service_ip }}">
+                </div>
+                <div class="form-group">
+                    <label for="secondary_service_speed">Velocidad Secundaria</label>
+                    <input type="text" id="secondary_service_speed" name="secondary_service_speed" class="form-control" value="{{ server.secondary_service_speed }}">
+                </div>
+                <div class="button-group">
+                    <button type="submit" class="btn btn-primary">Guardar</button>
+                    <a href="{{ url_for('index') }}" class="btn btn-secondary">Cancelar</a>
+                </div>
+            </form>
+            {% else %}
+            <form method="POST" action="{{ url_for('add_server') }}">
+                <h2 class="section-title">Agregar Nuevo Servidor</h2>
+                <div class="form-group">
+                    <label for="branch">Sucursal</label>
+                    <input type="text" id="branch" name="branch" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label for="branch_code">Código de Sucursal</label>
+                    <input type="text" id="branch_code" name="branch_code" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label for="dyndns">DynDNS</label>
+                    <input type="text" id="dyndns" name="dyndns" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label for="primary_service_provider">Proveedor Principal</label>
+                    <input type="text" id="primary_service_provider" name="primary_service_provider" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label for="primary_service_ip">IP Principal</label>
+                    <input type="text" id="primary_service_ip" name="primary_service_ip" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label for="primary_service_speed">Velocidad Principal</label>
+                    <input type="text" id="primary_service_speed" name="primary_service_speed" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label for="secondary_service_provider">Proveedor Secundario</label>
+                    <input type="text" id="secondary_service_provider" name="secondary_service_provider" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label for="secondary_service_ip">IP Secundaria</label>
+                    <input type="text" id="secondary_service_ip" name="secondary_service_ip" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label for="secondary_service_speed">Velocidad Secundaria</label>
+                    <input type="text" id="secondary_service_speed" name="secondary_service_speed" class="form-control">
+                </div>
+                <div class="button-group">
+                    <button type="submit" class="btn btn-primary">Agregar</button>
+                    <a href="{{ url_for('index') }}" class="btn btn-secondary">Cancelar</a>
+                </div>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Nueva Ventana Emergente para Resultados de Ping -->
+<div class="ping-result-popup" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: white; border: 1px solid #ccc; padding: 20px; z-index: 1000;">
+    <h5>Resultado de Ping</h5>
+    <pre class="ping-result-body"></pre>
+    <button class="btn btn-secondary close-popup">Cerrar</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+.ping-monitor {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 4px;
+    margin: 6px 0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+    max-height: 250px;
+    overflow: hidden;
+}
+
+.ping-stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0px;
+    padding: 4px;
+    background: white;
+    border-radius: 6px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    width: 100%;
+    height: 100px;
+    overflow: hidden;
+}
+
+.chart-container {
+    background: white;
+    border-radius: 6px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    padding: 2px;
+    width: 100%;
+    height: 148px;
+    overflow: hidden;
+    position: relative;
+}
+
+.chart-container canvas {
+    height: 100%;
+    width: 100%;
+    image-rendering: pixelated;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+}
+
+.stat-item {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 2px 4px;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.9);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    font-size: 0.85rem;
+    width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    gap: 2px;
+}
+
+.stat-label {     /* Esto es Titulo */
+    color: #6c757d;
+    font-weight: 500;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-right: 5px;
+    padding-right: -100px;
+    padding-left: 0.1px; 
+}
+
+.latency, .loss, .packet-loss-count { /* Esto es Informacion */
+    font-weight: bold;
+    font-size: 0.8rem;
+    color: #2c3e50;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-left: 5px;
+    padding-right:-100px;
+    padding-left: 0.1px; 
+}
+
+/* Estilos para el botón de monitoreo principal */
+.start-monitor {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.875rem;
+    min-width: 100px;
+    border-radius: 4px;
+    font-weight: 500;
+    text-shadow: 1px 1px 1px rgba(0,0,0,0.1);
+}
+
+.server-details {
+    display: flex;
+    flex-direction: column;
+    align-items: center;        /* Centra horizontalmente el contenido */
+    padding-left: 0;
+    padding-right: 0;
+}
+
+.server-details > .server-info {
+    justify-content: center;    /* Centra el contenido de cada fila */
+    text-align: center;         /* Centra el texto si hay saltos de línea */
+    width: 100%;
+    margin: 0 auto;
+}
+
+.start-monitor[data-service="primary"] {
+    background-color: #87CEEB !important;
+    border-color: #87CEEB !important;
+    color: #000 !important;
+}
+
+.start-monitor[data-service="primary"]:hover {
+    background-color: #6495ED !important;
+    border-color: #6495ED !important;
+    color: #000 !important;
+}
+
+.start-monitor[data-service="primary"].active {
+    background-color: #e74c3c !important;
+    border-color: #e74c3c !important;
+    color: white !important;
+}
+
+/* Estilos para el botón de monitoreo secundario */
+.start-monitor[data-service="secondary"] {
+    background-color: #0c770c !important;
+    border-color: #0c770c !important;
+    color: #000 !important;
+}
+
+.start-monitor[data-service="secondary"]:hover {
+    background-color: #90EE90 !important;
+    border-color: #90EE90 !important;
+    color: #000 !important;
+}
+
+.start-monitor[data-service="secondary"].active {
+    background-color: #e74c3c !important;
+    border-color: #e74c3c !important;
+    color: white !important;
+}
+
+.server-info {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-size: 1rem;    /* <--- AQUÍ se define el tamaño de la letra */
+    color: #222;
+    white-space: normal; 
+    word-break: break-word;
+    overflow-wrap: break-word;
+}
+
+</style>
+
+<script>
+const chartConfig = {
+    type: 'line',
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: {
+            padding: 2
+        },
+        scales: {
+            y: {
+                beginAtZero: false,
+                ticks: {
+                    font: {
+                        size: 4,  
+                        weight: 'normal',
+                        family: 'Arial, sans-serif'
+                    },
+                    stepSize: 20,
+                    callback: function(value) {
+                        return value + ' ms';
+                    },
+                    padding: 1
+                },
+                grid: {
+                    drawBorder: false,
+                    drawTicks: false,
+                    tickLength: 1
+                },
+                suggestedMin: -20,  
+                suggestedMax: 120    
+            },
+            x: {
+                ticks: {
+                    font: {
+                        size: 4,  
+                        weight: 'normal',
+                        family: 'Arial, sans-serif'
+                    },
+                    autoSkip: true,
+                    maxTicksLimit: 6,  
+                    padding: 1
+                },
+                grid: {
+                    drawBorder: false,
+                    drawTicks: false,
+                    tickLength: 1
+                }
+            }
+        },
+        plugins: {
+            legend: {
+                display: false
+            },
+            tooltip: {
+                enabled: true,
+                mode: 'index',
+                intersect: false,
+                callbacks: {
+                    label: function(context) {
+                        return context.parsed.y + ' ms';
+                    }
+                }
+            }
+        },
+        interaction: {
+            mode: 'index',
+            intersect: false
+        }
+    }
+};
+
+// Función para actualizar el gráfico
+function updateChart(chart, latency) {
+    if (!chart) return;
+    
+    // Obtener el último valor del dataset
+    const lastValue = chart.data.datasets[0].data[chart.data.datasets[0].data.length - 1];
+    
+    // Agregar nuevo punto
+    chart.data.labels.push(new Date().toLocaleTimeString());
+    chart.data.datasets[0].data.push(latency);
+    
+    // Mantener solo los últimos 10 puntos
+    if (chart.data.labels.length > 10) {
+        chart.data.labels.shift();
+        chart.data.datasets[0].data.shift();
+    }
+    
+    // Actualizar el gráfico
+    chart.update();
+}
+
+// Función para inicializar el gráfico
+function initializeChart(id, service) {
+    const canvas = document.getElementById(`pingChart-${id}-${service}`);
+    if (canvas) {
+        const ctx = canvas.getContext('2d');
+        
+        // Configuración del canvas para mejor calidad
+        const devicePixelRatio = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        
+        // Ajuste del tamaño del canvas
+        canvas.width = rect.width * devicePixelRatio;
+        canvas.height = rect.height * devicePixelRatio;
+        
+        // Ajuste del contexto para mejor calidad
+        ctx.scale(devicePixelRatio, devicePixelRatio);
+        ctx.imageSmoothingEnabled = false;
+        ctx.webkitImageSmoothingEnabled = false;
+        ctx.mozImageSmoothingEnabled = false;
+        ctx.imageSmoothingQuality = 'high';
+        
+        return new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Latencia (ms)',
+                    data: [],
+                    borderColor: '#ff4444',
+                    tension: 0.1,
+                    fill: false,
+                    pointRadius: 0,
+                    pointHoverRadius: 0,
+                    borderWidth: 2,
+                    lineTension: 0.1,
+                    borderCapStyle: 'butt',
+                    borderJoinStyle: 'miter'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: {
+                    padding: {
+                        top: 10,
+                        right: 10,
+                        bottom: 15,
+                        left: 15
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        ticks: {
+                            stepSize: 50,
+                            font: {
+                                size: 6,
+                                weight: 'normal',
+                                family: 'Arial, sans-serif'
+                            },
+                            padding: 3,
+                            maxTicksLimit: 5,
+                            callback: function(value) {
+                                return value + ' ms';
+                            }
+                        },
+                        grid: {
+                            color: '#e9ecef',
+                            borderDash: [2, 2]
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            font: {
+                                size: 6
+                            },
+                            autoSkip: true,
+                            maxTicksLimit: 6
+                        },
+                        grid: {
+                            color: '#e9ecef',
+                            borderDash: [2, 2]
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                }
+            }
+        });
+    }
+    return null;
+}
+
+// Inicializar todos los gráficos
+window.addEventListener('load', function() {
+    document.querySelectorAll('.ping-monitor').forEach(monitor => {
+        const id = monitor.closest('.server-card').dataset.id;
+        const service = monitor.classList.contains('primary-monitor') ? 'primary' : 'secondary';
+        monitor.chart = initializeChart(id, service);
+    });
+});
+
+// Función para iniciar/detener el monitoreo
+window.toggleMonitoring = function(ip, id, chart, button) {
+    const service = button.getAttribute('data-service');
+    const isMonitoring = button.classList.contains('active');
+    
+    if (isMonitoring) {
+        // Detener el monitoreo
+        button.classList.remove('active');
+        button.textContent = `Monitorear ${service == 'primary' ? 'Principal' : 'Secundario'}`;
+        
+        // Ocultar el monitor
+        const monitor = button.closest('.server-card').querySelector(`.ping-monitor.${service}-monitor`);
+        if (monitor) monitor.style.display = 'none';
+        
+        // Limpiar el intervalo
+        clearInterval(button.interval);
+        
+        // Limpiar el gráfico
+        chart.data.labels = [];
+        chart.data.datasets[0].data = [];
+        chart.update();
+        
+        // Restablecer estadísticas
+        const latencyElement = document.querySelector(`.latency[data-id="${id}"][data-service="${service}"]`);
+        const lossElement = document.querySelector(`.loss[data-id="${id}"][data-service="${service}"]`);
+        const packetLossCountElement = document.querySelector(`.packet-loss-count[data-id="${id}"][data-service="${service}"]`);
+        if (latencyElement) latencyElement.textContent = '-- ms';
+        if (lossElement) lossElement.textContent = '--%';
+        if (packetLossCountElement) packetLossCountElement.textContent = '0';
+        
+        // Hacer la llamada al backend para detener el monitoreo
+        fetch(`/stop_monitor/${ip}`)
+            .then(response => response.json())
+            .catch(error => console.error('Error al detener el monitoreo:', error));
+    } else {
+        // Iniciar el monitoreo
+        button.classList.add('active');
+        button.textContent = `Detener Monitoreo ${service == 'primary' ? 'Principal' : 'Secundario'}`;
+        
+        // Mostrar el monitor
+        const monitor = button.closest('.server-card').querySelector(`.ping-monitor.${service}-monitor`);
+        if (monitor) {
+            monitor.style.display = 'block';
+            monitor.style.height = '180px';
+            monitor.style.width = '100%';
+        }
+        
+        let packetLoss = 0;
+        let totalPings = 0;
+        
+        const updateUI = (latency, loss, packetLossCount) => {
+            const latencyElement = document.querySelector(`.latency[data-id="${id}"][data-service="${service}"]`);
+            const lossElement = document.querySelector(`.loss[data-id="${id}"][data-service="${service}"]`);
+            const packetLossCountElement = document.querySelector(`.packet-loss-count[data-id="${id}"][data-service="${service}"]`);
+            
+            if (latencyElement) latencyElement.textContent = latency + ' ms';
+            if (lossElement) lossElement.textContent = loss + '%';
+            if (packetLossCountElement) packetLossCountElement.textContent = packetLossCount;
+        };
+        
+        async function updateData() {
+            try {
+                // Obtener datos de ping del backend
+                const response = await fetch(`/get_ping_data/${ip}`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    console.error('Error:', data.error);
+                    return;
+                }
+
+                const labels = chart.data.labels;
+                const dataSeries = chart.data.datasets[0].data;
+                
+                if (labels.length >= 60) {
+                    labels.shift();
+                    dataSeries.shift();
+                }
+                
+                const lastLatency = data.latencies[data.latencies.length - 1];
+                const lastLoss = data.loss;
+                
+                // Calcular paquetes perdidos
+                const packetLossCount = Math.round(lastLoss * totalPings / 100);
+                
+                labels.push(new Date().toLocaleTimeString());
+                dataSeries.push(lastLatency);
+                
+                chart.update();
+                totalPings++;
+                updateUI(lastLatency, lastLoss, packetLossCount);
+                
+            } catch (error) {
+                console.error('Error al obtener datos:', error);
+                packetLoss++;
+            }
+        }
+        
+        // Iniciar el monitoreo
+        fetch(`/start_monitor/${ip}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert(data.error);
+                    return;
+                }
+                
+                button.interval = setInterval(updateData, 1000);
+            })
+            .catch(error => {
+                console.error('Error al iniciar el monitoreo:', error);
+                alert('Error al iniciar el monitoreo');
+            });
+    }
+};
+
+// Configurar los botones de monitoreo
+window.addEventListener('load', function() {
+    document.querySelectorAll('.start-monitor').forEach(button => {
+        button.addEventListener('click', function() {
+            const ip = this.getAttribute('data-ip');
+            const id = this.getAttribute('data-id');
+            const service = this.getAttribute('data-service');
+            const canvasId = `pingChart-${id}-${service}`;
+            
+            // Verificar si ya existe un gráfico
+            const existingChart = Chart.getChart(canvasId);
+            if (existingChart) {
+                existingChart.destroy();
+            }
+            
+            const chart = initializeChart(id, service);
+            if (!chart) {
+                console.error('No se pudo inicializar el gráfico');
+                return;
+            }
+            
+            toggleMonitoring(ip, id, chart, this);
+        });
+    });
+});
+
+// Manejo de eliminación de servidores
+document.querySelectorAll('.delete-server').forEach(button => {
+    button.addEventListener('click', function() {
+        const serverId = this.getAttribute('data-id');
+        if (confirm('¿Estás seguro de que deseas eliminar este servidor?')) {
+            fetch(`/delete_server/${serverId}`, {
+                method: 'POST'
+            })
+            .then(response => {
+                if (response.ok) {
+                    location.reload();  // Recargar la página para ver los cambios
+                } else {
+                    alert('Error al eliminar el servidor.');
+                }
+            });
+        }
+    });
+});
+
+// Manejo de ping a servidores
+document.querySelectorAll('.ping-server').forEach(button => {
+    button.addEventListener('click', function() {
+        const ip = this.getAttribute('data-ip');
+        fetch('/ping_server', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `ip=${ip}`
+        })
+        .then(response => response.json())
+        .then(data => {
+            const popup = document.querySelector('.ping-result-popup');
+            const resultBody = document.querySelector('.ping-result-body');
+            resultBody.innerHTML = `${data.result || data.error}`;
+            popup.style.display = 'block'; // Mostrar la ventana emergente
+        })
+        .catch(error => {
+            console.error('Error:', error);
+        });
+    });
+});
+
+// Cerrar la ventana emergente
+document.addEventListener('click', function(event) {
+    if (event.target.classList.contains('close-popup')) {
+        document.querySelector('.ping-result-popup').style.display = 'none';
+    }
+});
+
+// Función para abrir el formulario de edición de servidor
+function openEditServerForm(serverId) {
+    const formModal = document.querySelector('.edit-server-section');
+    const formTitle = document.querySelector('.section-title');
+    const form = formModal.querySelector('form');
+
+    if (serverId === '') {
+        // Configura el formulario para un nuevo servidor
+        form.reset(); // Resetea el formulario
+        formTitle.innerText = "Agregar Nuevo Servidor"; // Cambia el título del formulario
+    } else {
+        // Aquí puedes agregar lógica para cargar los datos del servidor existente si es necesario
+    }
+    formModal.style.display = 'block'; // Muestra el formulario
+}
+</script>
+
+{% endblock %}

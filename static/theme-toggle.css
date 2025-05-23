@@ -1,0 +1,118 @@
+/* Estilos para el botón de tema oscuro */
+.theme-toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 60px;
+    height: 34px;
+    margin: 0;
+    padding: 0;
+}
+
+.theme-toggle-switch input {
+    display: none;
+}
+
+.theme-toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: .4s;
+    border-radius: 34px;
+    padding: 2px;
+}
+
+.theme-toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 26px;
+    width: 26px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+}
+
+.theme-toggle-slider i {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.2em;
+    color: #666;
+    transition: all 0.3s ease;
+}
+
+.theme-toggle-slider .fa-moon {
+    left: 8px;
+}
+
+.theme-toggle-slider .fa-sun {
+    right: 8px;
+    opacity: 0;
+}
+
+.theme-toggle-checkbox:checked + .theme-toggle-slider {
+    background-color: #4a90e2;
+}
+
+.theme-toggle-checkbox:checked + .theme-toggle-slider:before {
+    transform: translateX(26px);
+}
+
+.theme-toggle-checkbox:checked + .theme-toggle-slider .fa-moon {
+    opacity: 0;
+}
+
+.theme-toggle-checkbox:checked + .theme-toggle-slider .fa-sun {
+    opacity: 1;
+    color: #fff;
+}
+
+.dark-theme .theme-toggle-slider {
+    background-color: #4a90e2;
+}
+
+.dark-theme .theme-toggle-slider:before {
+    background-color: #fff;
+}
+
+.dark-theme .theme-toggle-slider i {
+    color: #fff;
+}
+
+/* Estilos para el contenedor de configuraciones */
+.sidebar-settings {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.settings-link {
+    color: inherit;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 5px;
+    transition: all 0.3s ease;
+}
+
+.settings-link:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.settings-link i {
+    font-size: 1.1em;
+}
+
+.dark-theme .settings-link:hover {
+    background-color: rgba(74, 144, 226, 0.2);
+}

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kanban</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+
+</head>
+<body>
+    <div class="sidebar-trigger"></div>
+
+    <div class="container">
+        <!-- Menú Lateral -->
+        {% include 'sidebar.html' %}
+
+
+        <!-- Contenido Principal -->
+        <main class="main-content">
+            <!-- Encabezado de Kanban con título y filtro -->
+            <div class="kanban-header">
+                <h1>Tablero Kanban</h1>
+                <div class="filter-container">
+                    <label for="status-filter">Filtrar por Estado:</label>
+                    <select id="status-filter" onchange="filterKanban()">
+                        <option value="">Todos</option>
+                        {% for status in statuses %}
+                            <option value="{{ status }}" {% if status == selected_status %}selected{% endif %}>
+                                {{ status }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="kanban-container">
+                {% if selected_status %}
+                    {% if tickets[selected_status] %}
+                        <div class="kanban-column">
+                            <!-- Asegurarse de que la clase coincide con la definición en el CSS (mayúscula inicial) -->
+                            <div class="kanban-column-header {{ (selected_status or 'Sin Estado').capitalize() }}">
+                                <span>{{ selected_status or 'Sin Estado' }}</span> <span>{{ tickets[selected_status]|length }}</span>
+                            </div>
+                            {% for ticket in tickets[selected_status] %}
+                                <!-- Dentro del bloque que verifica si hay un estado seleccionado -->
+                                <div class="kanban-card" onclick="location.href='/edit_ticket/{{ ticket[0] }}?source=kanban';">
+                                    <p><strong>Ticket #{{ ticket[1] }}</strong></p>
+                                    <p><span class="fecha-creacion">Fecha de creación: {{ ticket[2] }}</span></p>
+                                    <p><span class="detalle">Agente: {{ ticket[3] }}</span></p>
+                                    <p><span class="detalle">Usuario: {{ ticket[9] }}</span></p>
+                                    <p><span class="detalle">Detalle del Ticket: {{ ticket[10] or 'Sin detalles' }}</span></p>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p>No hay tickets para el estado seleccionado.</p>
+                    {% endif %}
+                {% else %}
+                    {% for status, tickets in tickets.items() %}
+                        <div class="kanban-column">
+                            <!-- Asegurarse de que la clase coincide con la definición en el CSS (mayúscula inicial) -->
+                            <div class="kanban-column-header {{ (status or 'Sin Estado').capitalize() }}">
+                                <span>{{ status or 'Sin Estado' }}</span> <span>{{ tickets|length }}</span>
+                            </div>
+                            {% for ticket in tickets %}
+                                <!-- Dentro del bloque que itera sobre todos los estados -->
+                                <div class="kanban-card" onclick="location.href='/edit_ticket/{{ ticket[0] }}?source=kanban';">
+                                    <p><strong>Ticket #{{ ticket[1] }}</strong></p>
+                                    <p><span class="fecha-creacion">Fecha de creación: {{ ticket[2] }}</span></p>
+                                    <p><span class="detalle">Agente: {{ ticket[3] }}</span></p>
+                                    <p><span class="detalle">Usuario: {{ ticket[10] }}</span></p>
+                                </div>
+                            {% endfor %}
+                            <div class="add-ticket" onclick="location.href='/new_ticket';">+ Agregar registro</div>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            </div>
+        </main>
+    </div>
+
+    <!-- Script para el filtro -->
+    <script>
+        function filterKanban() {
+            const selectedStatus = document.getElementById('status-filter').value;
+            const url = selectedStatus ? `/kanban?status=${selectedStatus}` : '/kanban';
+            window.location.href = url;
+        }
+    </script>
+</body>
+</html>

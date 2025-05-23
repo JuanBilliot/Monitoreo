@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+
+{% block head %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+{% endblock %}
+
+{% block content %}
+{% include "sidebar.html" %}
+
+<div class="main-content">
+    <div class="main-header">
+        <h1 class="header-title">
+            <i class="fas fa-chart-pie"></i> Generación de Informes
+        </h1>
+    </div>
+
+    <div class="reports-grid">
+        <div class="report-card" onclick="selectReportType('estados')">
+            <div class="report-card-icon">
+                <i class="fas fa-chart-bar"></i>
+            </div>
+            <div class="report-card-content">
+                <h2>Tickets por Estado</h2>
+                <p class="report-card-description">
+                    Distribución de tickets según su estado actual en el sistema
+                </p>
+                <button class="btn btn-gradient" onclick="selectReportType('estados')">
+                    <i class="fas fa-chart-pie"></i> Generar Informe
+                </button>
+            </div>
+        </div>
+
+        <div class="report-card" onclick="selectReportType('rendimiento_agente')">
+            <div class="report-card-icon">
+                <i class="fas fa-users-cog"></i>
+            </div>
+            <div class="report-card-content">
+                <h2>Rendimiento por Agente</h2>
+                <p class="report-card-description">
+                    Análisis detallado del desempeño individual de cada agente en la gestión de tickets
+                </p>
+                <button class="btn btn-gradient" onclick="selectReportType('rendimiento_agente')">
+                    <i class="fas fa-chart-line"></i> Generar Informe
+                </button>
+            </div>
+        </div>
+
+        <div class="report-card" onclick="selectReportType('tiempo_resolucion')">
+            <div class="report-card-icon">
+                <i class="fas fa-stopwatch"></i>
+            </div>
+            <div class="report-card-content">
+                <h2>Tiempo de Resolución</h2>
+                <p class="report-card-description">
+                    Análisis de la eficiencia en la resolución de tickets según su tiempo de cierre
+                </p>
+                <button class="btn btn-gradient" onclick="selectReportType('tiempo_resolucion')">
+                    <i class="fas fa-clock"></i> Generar Informe
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="reports-filter-section">
+        <form id="reportForm" method="POST" action="{{ url_for('generate_report') }}" class="filter-group">
+            <input type="hidden" name="reporte" id="reportType" value="estados">
+            
+            <div class="filter-row">
+                <div class="form-group">
+                    <label for="estado">Estado del Ticket</label>
+                    <select name="estado" id="estado" class="form-control">
+                        <option value="Todos">Todos los Estados</option>
+                        {% for estado in estados %}
+                            <option value="{{ estado }}">{{ estado }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="mes">Mes de Creación</label>
+                    <select name="mes" multiple class="form-control">
+                        <option value="Todos">Todos los Meses</option>
+                        <option value="01">Enero</option>
+                        <option value="02">Febrero</option>
+                        <option value="03">Marzo</option>
+                        <option value="04">Abril</option>
+                        <option value="05">Mayo</option>
+                        <option value="06">Junio</option>
+                        <option value="07">Julio</option>
+                        <option value="08">Agosto</option>
+                        <option value="09">Septiembre</option>
+                        <option value="10">Octubre</option>
+                        <option value="11">Noviembre</option>
+                        <option value="12">Diciembre</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="filter-row">
+                <div class="form-group">
+                    <label for="agente">Agente</label>
+                    <select name="agente" class="form-control">
+                        <option value="Todos">Todos los Agentes</option>
+                        {% for agente in agentes %}
+                            <option value="{{ agente }}">{{ agente }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="first_response">SLA Primera Respuesta</label>
+                    <select name="first_response" class="form-control">
+                        <option value="Todos">Todos los SLA</option>
+                        <option value="Correcto">Correcto</option>
+                        <option value="Excedido">Excedido</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="filter-row">
+                <div class="form-group">
+                    <label for="sla_resolution">SLA Resolución</label>
+                    <select name="sla_resolution" class="form-control">
+                        <option value="Todos">Todos los SLA</option>
+                        <option value="Correcto">Correcto</option>
+                        <option value="Excedido">Excedido</option>
+                    </select>
+                </div>
+
+                <div class="form-group submit-group">
+                    <button type="submit" class="btn btn-primary btn-generate">
+                        <i class="fas fa-file-export"></i> Generar Informe
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    {% if plot_url %}
+    <div class="report-results">
+        <h2 class="header-title">
+            <i class="fas fa-chart-bar"></i> Resultado del Informe
+        </h2>
+        <div class="report-chart-container">
+            <img src="data:image/png;base64,{{ plot_url }}" alt="Gráfico de Informe" class="report-chart">
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function selectReportType(type) {
+    document.getElementById('reportType').value = type;
+    document.getElementById('reportForm').submit();
+}
+</script>
+{% endblock %}
