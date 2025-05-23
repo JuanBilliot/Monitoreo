@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="es"> <!-- Cambiar el idioma a español -->
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lista de Tickets</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <!-- Font Awesome para los íconos -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <!-- Eliminar o comentar el bloque de estilos en línea que sobrescribe .tag.date -->
+    <!--
+    <style>
+        .tag.date {
+            background-color: #e74c3c;
+            color: white;
+        }
+        /* Otros estilos que puedan interferir */
+    </style>
+    -->
+</head>
+<body>
+    <div class="sidebar-trigger"></div>
+
+    <div class="container">
+        <!-- Menú Lateral -->
+        <aside class="sidebar">
+            <h2>Gestión de Tickets</h2>
+            <nav>
+                <ul>
+                    <li><a href="{{ url_for('index') }}"><i class="fas fa-tachometer-alt"></i> Dashboard</a></li>
+                    <li><a href="{{ url_for('show_tickets') }}"><i class="fas fa-list"></i> Mostrar Tickets</a></li>
+                    <li><a href="{{ url_for('upload') }}"><i class="fas fa-upload"></i> Cargar BD</a></li>
+                    <li><a href="{{ url_for('new_ticket') }}"><i class="fas fa-plus-circle"></i> Ingreso de Ticket</a></li>
+                    <li><a href="{{ url_for('kanban') }}"><i class="fas fa-columns"></i> Kanban</a></li>
+                    <li><a href="{{ url_for('generate_report') }}"><i class="fas fa-chart-bar"></i> Generar Informe</a></li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Contenido Principal -->
+        <main class="main-content">
+            <!-- Encabezado: Título, Barra de búsqueda y Paginación -->
+            <div class="header-container">
+                <!-- Título -->
+                <h1 class="header-title">Lista de Tickets</h1>
+
+                <!-- Barra de búsqueda -->
+                <form action="/search_tickets" method="get" class="search-container">
+                    <div class="search-box">
+                        <button class="search-button" type="submit">
+                            <i class="fas fa-search"></i>
+                        </button>
+                        <input type="text" name="query" placeholder="Buscar tickets por agente, estado, usuario...">
+                    </div>
+                </form>
+
+                <!-- Paginación -->
+                <div class="pagination">
+                    {% if page > 1 %}
+                    <a href="{{ url_for('show_tickets', page=page-1) }}" class="prev">Atrás</a>
+                    {% else %}
+                    <span class="disabled prev">Atrás</span>
+                    {% endif %}
+
+                    {% for p in range(max(1, page-2), min(total_pages+1, page+3)) %}
+                    <a href="{{ url_for('show_tickets', page=p) }}" class="{% if p == page %}active{% endif %}">{{ p }}</a>
+                    {% endfor %}
+
+                    {% if page < total_pages %}
+                    <a href="{{ url_for('show_tickets', page=page+1) }}" class="next">Siguiente</a>
+                    {% else %}
+                    <span class="disabled next">Siguiente</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Tabla de Tickets -->
+            <table class="ticket-table airtable-style">
+                <thead>
+                    <tr>
+                        <th>Ticket</th>
+                        <th>Fecha de Creación</th>
+                        <th>Agente</th>
+                        <th>Estado</th>
+                        <th>Colaboradores</th>
+                        <th>SLA de Primera Respuesta</th>
+                        <th>Acuerdo de Resolución</th>
+                        <th>Fecha de Cierre</th>
+                        <th>Demora</th>
+                        <th>Usuario</th>
+                    </tr>
+                </thead>
+                <tbody id="ticketTableBody">
+                    {% for ticket in tickets %}
+                    <tr onclick="location.href='/edit_ticket/{{ ticket[0] }}';">
+                        <td><span class="tag ticket-number">{{ ticket[1] }}</span></td>
+                        <td>
+                            <input type="date" class="date-input" name="fecha_creacion" required value="{{ ticket[2]|default('Sin fecha') }}">
+                        </td>
+                        <td>
+                            <span class="tag agent-{{ ticket[3]|agent_class }}">{{ ticket[3] }}</span>
+                        </td>
+                        <td>
+                            <span class="tag estado-{{ ticket[4]|lower|replace(' ', '-') }}">{{ ticket[4] }}</span>
+                        </td>
+                        <td>
+                            {% if ticket[5] %}
+                                <div class="tag td collaborators">
+                                    {% set collaborator_list = ticket[5].split(',') %}
+                                    {% for collaborator in collaborator_list %}
+                                        {% set normalized_collaborator = collaborator.strip()|lower|replace(' ', '-')|replace('.', '')|replace('ó', 'o') %}
+                                        {% set full_normalized_name = normalized_collaborator|replace('-', '') %}
+                                        <span class="tag collaborator collaborator-{{ full_normalized_name }}">{{ collaborator.strip() }}</span>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                            <span class="tag collaborator" data-empty="true">Sin colaboradores</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="tag sla-{{ 'correcto' if ticket[6] == 'Correcto' else 'excedido' }}">{{ ticket[6] }}</span>
+                        </td>
+                        <td>
+                            <span class="tag sla-{{ 'correcto' if ticket[7] == 'Correcto' else 'excedido' }}">{{ ticket[7] }}</span>
+                        </td>
+                        <td>
+                            <input type="date" class="date-input" name="fecha_cierre" required value="{{ ticket[8]|default('Sin cierre') }}">
+                        </td>
+                        <td>
+                            {% if ticket[9] == None or ticket[9] == '' or ticket[9] == 'None' %}
+                                <span class="tag delay-normal">0 días</span>
+                            {% else %}
+                                {% set delay_text = ticket[9]|string %}
+                                {% if 'días' not in delay_text %}
+                                    {% set delay_text = delay_text + ' días' %}
+                                {% endif %}
+                                {% set delay_value = delay_text.replace(' días', '') | int %}
+                                {% if delay_value <= 1 %}
+                                    {% set delay_class = 'delay-normal' %}
+                                {% elif delay_value <= 5 %}
+                                    {% set delay_class = 'delay-warning' %}
+                                {% elif delay_value <= 10 %}
+                                    {% set delay_class = 'delay-danger' %}
+                                {% else %}
+                                    {% set delay_class = 'delay-critical' %}
+                                {% endif %}
+                                <span class="tag {{ delay_class }}">
+                                    {{ delay_text }}
+                                </span>
+                            {% endif %}
+                        </td>                                              
+                        <td><span class="tag user">{{ ticket[10]|default('None') }}</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </main>
+    </div>
+</body>
+</html>
