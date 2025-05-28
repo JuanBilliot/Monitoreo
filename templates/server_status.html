@@ -216,6 +216,42 @@
     </div>
 </div>
 
+<!-- Modal para gráfico expandido -->
+<div id="chartModal" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.7); z-index: 1000;">
+    <div class="modal-content" style="position: relative; background-color: #fff; margin: 10% auto; padding: 0; width: 70%; max-width: 850px; height: auto; border-radius: 12px; box-shadow: 0 8px 16px rgba(0,0,0,0.2); overflow: hidden;">
+        <div class="modal-header" style="background: linear-gradient(135deg, #3498db, #2980b9); color: white; padding: 15px 20px; border-radius: 12px 12px 0 0;">
+            <h2 id="modalTitle" style="margin: 0; font-size: 1.4em;"></h2>
+            <span class="close-modal" style="position: absolute; right: 20px; top: 12px; font-size: 24px; cursor: pointer; color: white;">&times;</span>
+        </div>
+        <div class="modal-body" style="padding: 25px 30px; background-color: #f8f9fa;">
+            <div id="modalChartContainer" style="background-color: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 15px;">
+                <canvas id="modalChart" style="height: 300px;"></canvas>
+            </div>
+            <div id="modalStats" class="ping-stats-grid" style="background-color: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+            <div class="stat-column">
+                <div class="stat-item">
+                    <span class="stat-label">Latencia (Promedio):</span>
+                    <span id="modalLatencyP" class="stat-value">-- ms</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Pérdida %:</span>
+                    <span id="modalLoss" class="stat-value">--%</span>
+                </div>
+            </div>
+            <div class="stat-column">
+                <div class="stat-item">
+                    <span class="stat-label">Latencia (Actual):</span>
+                    <span id="modalLatencyS" class="stat-value">-- ms</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Paquetes Perdidos:</span>
+                    <span id="modalPacketLoss" class="stat-value">0</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Nueva Ventana Emergente para Resultados de Ping -->
 <div class="ping-result-popup" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: white; border: 1px solid #ccc; padding: 20px; z-index: 1000;">
     <h5>Resultado de Ping</h5>
@@ -798,6 +834,138 @@ function openEditServerForm(serverId) {
     }
     formModal.style.display = 'block'; // Muestra el formulario
 }
+// Funcionalidad para expandir gráficos
+document.querySelectorAll('.ping-monitor').forEach(monitor => {
+    monitor.querySelector('.chart-container').style.cursor = 'pointer';
+    monitor.querySelector('.chart-container').addEventListener('click', function() {
+        const serverId = this.closest('.server-card').querySelector('.start-monitor').dataset.id;
+        const serviceType = this.closest('.ping-monitor').classList.contains('primary-monitor') ? 'primary' : 'secondary';
+        const originalChart = Chart.getChart(`pingChart-${serverId}-${serviceType}`);
+        const modal = document.getElementById('chartModal');
+        const modalTitle = document.getElementById('modalTitle');
+        
+        // Configurar título del modal
+        const serverTitle = this.closest('.server-card').querySelector('.server-title').textContent;
+        modalTitle.textContent = `${serverTitle} - ${serviceType === 'primary' ? 'Servicio Principal' : 'Servicio Secundario'}`;
+        
+        // Mostrar modal
+        modal.style.display = 'block';
+        
+        // Crear nuevo gráfico en el modal
+        const modalCanvas = document.getElementById('modalChart');
+        if (Chart.getChart(modalCanvas)) {
+            Chart.getChart(modalCanvas).destroy();
+        }
+        
+        // Clonar configuración del gráfico original
+        const newChart = new Chart(modalCanvas, {
+            type: originalChart.config.type,
+            data: JSON.parse(JSON.stringify(originalChart.data)),
+            options: {
+                ...originalChart.config.options,
+                maintainAspectRatio: false,
+                responsive: true
+            }
+        });
+        
+        // Sincronizar datos del gráfico y estadísticas
+        const updateModalContent = setInterval(() => {
+            if (modal.style.display === 'none') {
+                clearInterval(updateModalContent);
+                return;
+            }
+            // Actualizar gráfico
+            newChart.data = JSON.parse(JSON.stringify(originalChart.data));
+            newChart.update('none');
+            
+            // Actualizar estadísticas
+            const originalStats = this.closest('.ping-monitor');
+            document.getElementById('modalLatencyP').textContent = originalStats.querySelector('.latency[data-service="' + serviceType + '"]').textContent;
+            document.getElementById('modalLatencyS').textContent = originalStats.querySelectorAll('.latency[data-service="' + serviceType + '"]')[1].textContent;
+            document.getElementById('modalLoss').textContent = originalStats.querySelector('.loss[data-service="' + serviceType + '"]').textContent;
+            document.getElementById('modalPacketLoss').textContent = originalStats.querySelector('.packet-loss-count[data-service="' + serviceType + '"]').textContent;
+        }, 1000);
+    });
+});
+
+// Cerrar modal
+document.querySelector('.close-modal').addEventListener('click', function() {
+    document.getElementById('chartModal').style.display = 'none';
+});
+
+// Cerrar modal al hacer clic fuera
+window.addEventListener('click', function(event) {
+    const modal = document.getElementById('chartModal');
+    if (event.target === modal) {
+        modal.style.display = 'none';
+    }
+});
 </script>
+
+<style>
+.chart-container {
+    transition: transform 0.2s;
+}
+
+.chart-container:hover {
+    transform: scale(1.02);
+}
+
+#modalStats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    border-top: 2px solid #e8eef3;
+    padding-top: 20px;
+    margin-top: 20px;
+}
+
+#modalStats .stat-column {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+#modalStats .stat-item {
+    position: relative;
+    padding: 12px 15px;
+    background-color: #f8f9fa;
+    border-radius: 6px;
+    border: 1px solid #e8eef3;
+    transition: background-color 0.2s;
+}
+
+#modalStats .stat-item:hover {
+    background-color: #e8eef3;
+}
+
+#modalStats .stat-label {
+    font-weight: 500;
+    color: #34495e;
+    font-size: 0.95em;
+    white-space: nowrap;
+    display: inline-block;
+}
+
+#modalStats .stat-value {
+    font-family: 'Roboto Mono', monospace;
+    font-size: 1.1em;
+    color: #2980b9;
+    font-weight: 500;
+    position: absolute;
+    left: 160px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.modal-header h2 {
+    text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.close-modal:hover {
+    color: #e74c3c;
+    text-shadow: 0 0 8px rgba(255,255,255,0.5);
+}
+</style>
 
 {% endblock %}
