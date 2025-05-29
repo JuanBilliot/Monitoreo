@@ -677,14 +677,22 @@ window.toggleMonitoring = function(ip, id, chart, button) {
         let packetLoss = 0;
         let totalPings = 0;
         
-        const updateUI = (latency, loss, packetLossCount) => {
-            const latencyElement = document.querySelector(`.latency[data-id="${id}"][data-service="${service}"]`);
-            const lossElement = document.querySelector(`.loss[data-id="${id}"][data-service="${service}"]`);
-            const packetLossCountElement = document.querySelector(`.packet-loss-count[data-id="${id}"][data-service="${service}"]`);
-            
-            if (latencyElement) latencyElement.textContent = latency + ' ms';
-            if (lossElement) lossElement.textContent = loss + '%';
-            if (packetLossCountElement) packetLossCountElement.textContent = packetLossCount;
+        const updateStats = (data, service) => {
+            const latencyElement = monitor.querySelector(`.latency[data-service="${service}"]`);
+            const latencyElement2 = monitor.querySelectorAll(`.latency[data-service="${service}"]`)[1];
+            const lossElement = monitor.querySelector(`.loss[data-service="${service}"]`);
+            const packetLossElement = monitor.querySelector(`.packet-loss-count[data-service="${service}"]`);
+
+            // Calcular promedio de latencia
+            const avgLatency = data.latencies.length > 0 ? 
+                (data.latencies.reduce((a, b) => a + b, 0) / data.latencies.length).toFixed(2) : 
+                '0.00';
+
+            latencyElement.textContent = `${avgLatency} ms`;
+            latencyElement2.textContent = `${data.current_latency.toFixed(2)} ms`;
+            lossElement.textContent = `${data.loss.toFixed(2)}%`;
+            const lostPackets = Math.round(data.latencies.length * (data.loss / 100));
+            packetLossElement.textContent = `${lostPackets}`;
         };
         
         async function updateData() {
@@ -706,18 +714,12 @@ window.toggleMonitoring = function(ip, id, chart, button) {
                     dataSeries.shift();
                 }
                 
-                const lastLatency = data.latencies[data.latencies.length - 1];
-                const lastLoss = data.loss;
-                
-                // Calcular paquetes perdidos
-                const packetLossCount = Math.round(lastLoss * totalPings / 100);
-                
                 labels.push(new Date().toLocaleTimeString());
-                dataSeries.push(lastLatency);
+                dataSeries.push(data.current_latency);
                 
                 chart.update();
                 totalPings++;
-                updateUI(lastLatency, lastLoss, packetLossCount);
+                updateStats(data, service);
                 
             } catch (error) {
                 console.error('Error al obtener datos:', error);

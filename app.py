@@ -25,28 +25,6 @@ app.config['REDIS_URL'] = "redis://localhost"
 app.register_blueprint(sse, url_prefix='/stream')
 
 # Variable global para caché de datos de ping
-class PingCache:
-    def __init__(self):
-        self.data = {}
-        self.lock = threading.Lock()
-
-    def update(self, ip, latency, packet_loss):
-        with self.lock:
-            if ip not in self.data:
-                self.data[ip] = {'latencies': [], 'loss': 0}
-            self.data[ip]['latencies'].append(latency)
-            self.data[ip]['loss'] = packet_loss
-            # Mantener solo los últimos 100 valores
-            if len(self.data[ip]['latencies']) > 100:
-                self.data[ip]['latencies'] = self.data[ip]['latencies'][-100:]
-
-    def get_data(self, ip):
-        with self.lock:
-            return self.data.get(ip, {'latencies': [], 'loss': 0})
-
-ping_cache = PingCache()
-
-
 # Función para validar IP
 def is_valid_ip(ip):
     try:
@@ -55,7 +33,6 @@ def is_valid_ip(ip):
     except socket.error:
         return False
 
-# Modificar PingCache para incluir validación de IP
 class PingCache:
     def __init__(self):
         self.data = {}
@@ -83,6 +60,8 @@ class PingCache:
                 return {'latencies': [], 'loss': 100}
                 
             return self.data.get(ip, {'latencies': [], 'loss': 0})
+
+ping_cache = PingCache()
 
 def init_db():
     """Inicializa la base de datos y agrega columnas si es necesario."""
@@ -1231,10 +1210,12 @@ def get_ping_data(ip):
             })
             
         data = ping_cache.get_data(ip)
+        current_latency = data['latencies'][-1] if data['latencies'] else 0
         return jsonify({
             'latencies': data['latencies'],
             'loss': data['loss'],
-            'valid_ip': True
+            'valid_ip': True,
+            'current_latency': current_latency
         })
     except Exception as e:
         return jsonify({
