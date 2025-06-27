@@ -1,4 +1,4 @@
-Datps importante de la app
+Datos importantes de la app
 
 forzar push a GitHub: 
 git push --force origin main

@@ -29,7 +29,7 @@
                         <div class="server-info">
                             <strong>IP Principal:</strong> <span class="terminal">{{ server['primary_service_ip'] }}</span>
                             <div class="button-group">
-                                <button class="btn btn-sm btn-info ping-server" data-ip="{{ server['primary_service_ip'] }}">Ping</button>
+                                <button id="ping-button-primary" class="ping-server" data-ip="{{ server['primary_service_ip'] }}">Ping</button>
                             </div>
                         </div>
                         {% if server['secondary_service_ip'] %}
@@ -39,7 +39,7 @@
                         <div class="server-info">
                             <strong>IP Secundaria:</strong> <span class="terminal">{{ server['secondary_service_ip'] }}</span>
                             <div class="button-group">
-                                <button class="btn btn-sm btn-info ping-server" data-ip="{{ server['secondary_service_ip'] }}">Ping</button>
+                                <button id="ping-button-secondary" class="ping-server" data-ip="{{ server['secondary_service_ip'] }}">Ping</button>
                             </div>
                         </div>
                         {% endif %}
@@ -253,10 +253,14 @@
 </div>
 
 <!-- Nueva Ventana Emergente para Resultados de Ping -->
-<div class="ping-result-popup" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: white; border: 1px solid #ccc; padding: 20px; z-index: 1000;">
-    <h5>Resultado de Ping</h5>
-    <pre class="ping-result-body"></pre>
-    <button class="btn btn-secondary close-popup">Cerrar</button>
+<!-- Overlay para el fondo oscuro -->
+<div class="ping-result-overlay" id="pingResultOverlay"></div>
+
+<!-- Popup de resultados de ping -->
+<div class="ping-result-popup" id="pingResultPopup">
+    <button class="close-popup" id="closePingPopup">&times;</button>
+    <h5><i class="fas fa-server"></i> Resultado del Ping</h5>
+    <div class="ping-result-body"></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -375,15 +379,15 @@
 }
 
 .start-monitor[data-service="primary"] {
-    background-color: #87CEEB !important;
-    border-color: #87CEEB !important;
-    color: #000 !important;
+    background-color: #3b82f6 !important;
+    border-color: #3b82f6 !important;
+    color: white !important;
 }
 
 .start-monitor[data-service="primary"]:hover {
-    background-color: #6495ED !important;
-    border-color: #6495ED !important;
-    color: #000 !important;
+    background-color: #2563eb !important;
+    border-color: #2563eb !important;
+    color: white !important;
 }
 
 .start-monitor[data-service="primary"].active {
@@ -618,6 +622,11 @@ function initializeChart(id, service) {
     return null;
 }
 
+// Variables globales
+let monitoringInterval = null; // Para el intervalo de monitoreo
+let isMonitoring = false;     // Estado del monitoreo
+const lostPacketsCounters = {}; // Para rastrear paquetes perdidos acumulados por servicio
+
 // Inicializar todos los gráficos
 window.addEventListener('load', function() {
     document.querySelectorAll('.ping-monitor').forEach(monitor => {
@@ -627,121 +636,805 @@ window.addEventListener('load', function() {
     });
 });
 
-// Función para iniciar/detener el monitoreo
-window.toggleMonitoring = function(ip, id, chart, button) {
-    const service = button.getAttribute('data-service');
-    const isMonitoring = button.classList.contains('active');
+// Función para mostrar notificación al usuario
+function showNotification(type, message) {
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.innerHTML = `
+        <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i>
+        <span>${message}</span>
+        <button class="close-notification">&times;</button>
+    `;
     
-    if (isMonitoring) {
-        // Detener el monitoreo
-        button.classList.remove('active');
-        button.textContent = `Monitorear ${service == 'primary' ? 'Principal' : 'Secundario'}`;
+    document.body.appendChild(notification);
+    
+    // Cerrar notificación al hacer clic en el botón
+    notification.querySelector('.close-notification').addEventListener('click', () => {
+        notification.remove();
+    });
+    
+    // Cerrar automáticamente después de 5 segundos
+    setTimeout(() => {
+        if (document.body.contains(notification)) {
+            notification.remove();
+        }
+    }, 5000);
+}
+
+// Función para actualizar las estadísticas en la interfaz
+function updateStatsUI(monitor, data, service) {
+    if (!monitor) {
+        console.error('No se pudo actualizar la interfaz: monitor no definido');
+        return;
+    }
+    
+    try {
+        console.log(`[updateStatsUI] Actualizando UI para servicio ${service}:`, data);
         
-        // Ocultar el monitor
-        const monitor = button.closest('.server-card').querySelector(`.ping-monitor.${service}-monitor`);
-        if (monitor) monitor.style.display = 'none';
+        // Asegurar que data y data.stats existan y tengan valores por defecto
+        if (!data) data = {};
+        if (!data.stats) data.stats = {};
         
-        // Limpiar el intervalo
-        clearInterval(button.interval);
+        // Asegurar que los valores numéricos sean válidos
+        const stats = data.stats || {};
+        const currentLatency = parseFloat(data.current_latency || data.latency || -1);
+        const packetLoss = Math.min(100, Math.max(0, parseFloat(data.loss || data.packet_loss || (stats.loss_percentage !== undefined ? stats.loss_percentage : 100))));
+        const totalPings = parseInt(stats.total_pings || 0, 10);
+        const successfulPings = parseInt(stats.successful_pings || 0, 10);
+        const failedPings = parseInt(stats.failed_pings || 0, 10);
+        const avgLatency = parseFloat(stats.avg_latency || stats.avg || 0);
+        const minLatency = parseFloat(stats.min_latency || stats.min || 0);
+        const maxLatency = parseFloat(stats.max_latency || stats.max || 0);
         
-        // Limpiar el gráfico
-        chart.data.labels = [];
-        chart.data.datasets[0].data = [];
-        chart.update();
+        // Obtener el ID único del servicio (combinación de ID del servidor y tipo de servicio)
+        const serverId = monitor.closest('.server-card')?.dataset?.id;
+        const serviceKey = serverId ? `${serverId}-${service}` : service;
         
-        // Restablecer estadísticas
-        const latencyElement = document.querySelector(`.latency[data-id="${id}"][data-service="${service}"]`);
-        const lossElement = document.querySelector(`.loss[data-id="${id}"][data-service="${service}"]`);
-        const packetLossCountElement = document.querySelector(`.packet-loss-count[data-id="${id}"][data-service="${service}"]`);
-        if (latencyElement) latencyElement.textContent = '-- ms';
-        if (lossElement) lossElement.textContent = '--%';
-        if (packetLossCountElement) packetLossCountElement.textContent = '0';
-        
-        // Hacer la llamada al backend para detener el monitoreo
-        fetch(`/stop_monitor/${ip}`)
-            .then(response => response.json())
-            .catch(error => console.error('Error al detener el monitoreo:', error));
-    } else {
-        // Iniciar el monitoreo
-        button.classList.add('active');
-        button.textContent = `Detener Monitoreo ${service == 'primary' ? 'Principal' : 'Secundario'}`;
-        
-        // Mostrar el monitor
-        const monitor = button.closest('.server-card').querySelector(`.ping-monitor.${service}-monitor`);
-        if (monitor) {
-            monitor.style.display = 'block';
-            monitor.style.height = '180px';
-            monitor.style.width = '100%';
+        // Inicializar el contador para este servicio si no existe
+        if (lostPacketsCounters[serviceKey] === undefined) {
+            lostPacketsCounters[serviceKey] = 0;
+            console.log(`[updateStatsUI] Inicializado contador de paquetes perdidos para ${serviceKey}: 0`);
         }
         
-        let packetLoss = 0;
-        let totalPings = 0;
+        // Si hay fallos en esta actualización, los sumamos al contador
+        if (failedPings > 0) {
+            console.log(`[updateStatsUI] Se detectaron ${failedPings} fallos nuevos para ${serviceKey}`);
+            lostPacketsCounters[serviceKey] += failedPings;
+            console.log(`[updateStatsUI] Total acumulado de paquetes perdidos para ${serviceKey}: ${lostPacketsCounters[serviceKey]}`);
+        }
         
-        const updateStats = (data, service) => {
-            const latencyElement = monitor.querySelector(`.latency[data-service="${service}"]`);
-            const latencyElement2 = monitor.querySelectorAll(`.latency[data-service="${service}"]`)[1];
-            const lossElement = monitor.querySelector(`.loss[data-service="${service}"]`);
-            const packetLossElement = monitor.querySelector(`.packet-loss-count[data-service="${service}"]`);
-
-            // Calcular promedio de latencia
-            const avgLatency = data.latencies.length > 0 ? 
-                (data.latencies.reduce((a, b) => a + b, 0) / data.latencies.length).toFixed(2) : 
-                '0.00';
-
-            latencyElement.textContent = `${avgLatency} ms`;
-            latencyElement2.textContent = `${data.current_latency.toFixed(2)} ms`;
-            lossElement.textContent = `${data.loss.toFixed(2)}%`;
-            const lostPackets = Math.round(data.latencies.length * (data.loss / 100));
-            packetLossElement.textContent = `${lostPackets}`;
-        };
+        // Usar el contador acumulado
+        const lostPackets = lostPacketsCounters[serviceKey];
         
-        async function updateData() {
-            try {
-                // Obtener datos de ping del backend
-                const response = await fetch(`/get_ping_data/${ip}`);
-                const data = await response.json();
-                
-                if (data.error) {
-                    console.error('Error:', data.error);
-                    return;
-                }
-
-                const labels = chart.data.labels;
-                const dataSeries = chart.data.datasets[0].data;
-                
-                if (labels.length >= 60) {
-                    labels.shift();
-                    dataSeries.shift();
-                }
-                
-                labels.push(new Date().toLocaleTimeString());
-                dataSeries.push(data.current_latency);
-                
-                chart.update();
-                totalPings++;
-                updateStats(data, service);
-                
-            } catch (error) {
-                console.error('Error al obtener datos:', error);
-                packetLoss++;
+        // Obtener referencias a los elementos de la interfaz
+        const latencyElements = monitor.querySelectorAll(`.latency[data-service="${service}"]`);
+        
+        // Buscar elementos de pérdida de paquetes con diferentes selectores posibles
+        let lossElement = monitor.querySelector(`.loss[data-service="${service}"]`);
+        if (!lossElement) {
+            // Intentar con otro selector común
+            lossElement = monitor.querySelector(`.loss-value[data-service="${service}"]`);
+            if (!lossElement) {
+                // Último intento con selector más genérico
+                lossElement = monitor.querySelector(`[data-service="${service}"] .loss, [data-service="${service}"] .loss-value`);
             }
         }
         
-        // Iniciar el monitoreo
-        fetch(`/start_monitor/${ip}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.error) {
-                    alert(data.error);
+        // Buscar elemento de contador de pérdida de paquetes
+        let packetLossElement = monitor.querySelector(`.packet-loss-count[data-service="${service}"]`);
+        if (!packetLossElement) {
+            packetLossElement = monitor.querySelector(`[data-service="${service}"] .packet-loss-count`);
+        }
+        
+        // Buscar elementos de estadísticas de latencia
+        const avgLatencyElement = monitor.querySelector(`.avg-latency[data-service="${service}"], [data-service="${service}"] .avg-latency`);
+        const minLatencyElement = monitor.querySelector(`.min-latency[data-service="${service}"], [data-service="${service}"] .min-latency`);
+        const maxLatencyElement = monitor.querySelector(`.max-latency[data-service="${service}"], [data-service="${service}"] .max-latency`);
+
+        // Verificar que los elementos críticos existan
+        const elementsFound = {
+            latencyElements: latencyElements.length,
+            lossElement: !!lossElement,
+            packetLossElement: !!packetLossElement
+        };
+        
+        console.log('Elementos encontrados en la interfaz:', elementsFound);
+        
+        // No salir si faltan elementos, solo mostrar advertencia
+        if (!latencyElements.length) {
+            console.warn('No se encontraron elementos de latencia para actualizar');
+            return;
+        }
+        
+        // Obtener referencias a los elementos de latencia específicos
+        const latencyElement = latencyElements[0]; // Latencia P (primera columna)
+        const secondaryLatencyElement = latencyElements[1]; // Latencia S (segunda columna)
+        
+        // Actualizar los valores en la interfaz
+        try {
+            // Actualizar latencia actual (P)
+            if (currentLatency >= 0) {
+                const latencyText = `${currentLatency.toFixed(2)} ms`;
+                const latencyClass = currentLatency < 50 ? 'good' : currentLatency < 150 ? 'warning' : 'error';
+                
+                // Actualizar latencia P (primera columna)
+                if (latencyElement) {
+                    latencyElement.textContent = latencyText;
+                    latencyElement.className = `latency ${service}-latency ${latencyClass}`;
+                }
+                
+                // Actualizar latencia S (segunda columna) si existe
+                if (secondaryLatencyElement) {
+                    secondaryLatencyElement.textContent = latencyText;
+                    secondaryLatencyElement.className = `latency ${service}-latency ${latencyClass}`;
+                }
+            } else {
+                const errorText = '--';
+                if (latencyElement) {
+                    latencyElement.textContent = errorText;
+                    latencyElement.className = `latency ${service}-latency text-danger`;
+                }
+                if (secondaryLatencyElement) {
+                    secondaryLatencyElement.textContent = errorText;
+                    secondaryLatencyElement.className = `latency ${service}-latency text-danger`;
+                }
+            }
+            
+            // Actualizar pérdida de paquetes
+            if (lossElement) {
+                if (!isNaN(packetLoss) && isFinite(packetLoss)) {
+                    const lossText = `${packetLoss.toFixed(2)}%`;
+                    // Actualizar clase según el valor de pérdida
+                    const lossClass = packetLoss === 0 ? 'good' : packetLoss < 5 ? 'warning' : 'error';
+                    
+                    // Actualizar solo si el valor ha cambiado
+                    if (lossElement.textContent !== lossText) {
+                        lossElement.textContent = lossText;
+                        // Mantener clases existentes que no sean de estado
+                        const baseClass = lossElement.className.split(' ').filter(c => !['good', 'warning', 'error'].includes(c)).join(' ');
+                        lossElement.className = `${baseClass} ${lossClass}`.trim();
+                        console.log(`[updateStatsUI] Actualizando pérdida a ${lossText} (${lossClass})`);
+                    }
+                } else {
+                    lossElement.textContent = 'N/A';
+                    // Mantener clases existentes que no sean de estado
+                    const baseClass = lossElement.className.split(' ').filter(c => !['good', 'warning', 'error'].includes(c)).join(' ');
+                    lossElement.className = `${baseClass} error`.trim();
+                    console.warn('[updateStatsUI] Valor de pérdida no válido');
+                }
+            } else {
+                console.warn('[updateStatsUI] No se encontró el elemento de pérdida de paquetes');
+            }
+            
+            // Actualizar contador de paquetes perdidos
+            if (!isNaN(lostPackets) && isFinite(lostPackets)) {
+                packetLossElement.textContent = lostPackets;
+            } else {
+                packetLossElement.textContent = '0';
+            }
+            
+            // Actualizar estadísticas de latencia si los elementos existen
+            if (avgLatencyElement) {
+                avgLatencyElement.textContent = !isNaN(avgLatency) && isFinite(avgLatency) ? 
+                    `${avgLatency.toFixed(2)} ms` : 'N/A';
+            }
+            
+            if (minLatencyElement) {
+                minLatencyElement.textContent = !isNaN(minLatency) && isFinite(minLatency) ? 
+                    `${minLatency.toFixed(2)} ms` : 'N/A';
+            }
+            
+            if (maxLatencyElement) {
+                maxLatencyElement.textContent = !isNaN(maxLatency) && isFinite(maxLatency) ? 
+                    `${maxLatency.toFixed(2)} ms` : 'N/A';
+            }
+            
+            // Obtener referencias a los elementos de contadores
+            const totalElement = monitor.querySelector(`.total-pings[data-service="${service}"]`);
+            const successElement = monitor.querySelector(`.successful-pings[data-service="${service}"]`);
+            const failedElement = monitor.querySelector(`.failed-pings[data-service="${service}"]`);
+            
+            // Actualizar contadores de paquetes
+            const updateCounter = (element, value) => {
+                if (!element) return;
+                const textValue = value.toString();
+                if (element.textContent !== textValue) {
+                    element.textContent = textValue;
+                }
+            };
+            
+            // Solo actualizar los contadores si los elementos existen
+            if (totalElement) updateCounter(totalElement, totalPings);
+            if (successElement) updateCounter(successElement, successfulPings);
+            if (failedElement) updateCounter(failedElement, failedPings);
+            
+            console.log(`[updateStatsUI] UI actualizada para ${service}:`, {
+                currentLatency,
+                packetLoss,
+                lostPackets,
+                avgLatency,
+                minLatency,
+                maxLatency,
+                totalPings,
+                successfulPings,
+                failedPings
+            });
+            
+        } catch (error) {
+            console.error(`Error al actualizar la UI para ${service}:`, error);
+        }
+        
+        // La actualización de la interfaz ya se realizó en el bloque try anterior
+        // Solo actualizamos la hora de última actualización
+        const lastUpdateElement = monitor.querySelector(`.last-update[data-service="${service}"]`);
+        if (lastUpdateElement) {
+            const now = new Date();
+            lastUpdateElement.textContent = now.toLocaleTimeString();
+            lastUpdateElement.title = `Última actualización: ${now.toLocaleString()}`;
+        }
+        
+        console.log(`[updateStatsUI] Actualización completada para ${service} - Latencia: ${currentLatency}ms, Pérdida: ${packetLoss}%`);
+        
+    } catch (error) {
+        console.error('Error al actualizar la interfaz de estadísticas:', error);
+    }
+}
+
+// Función para actualizar el gráfico con nuevos datos
+function updateChartData(chart, data) {
+    // Verificar si el gráfico ha sido destruido o no está definido
+    if (!chart || chart._destroyed) {
+        console.warn('[updateChartData] Advertencia: El gráfico no está disponible o ha sido destruido');
+        return false;
+    }
+    
+    // Asegurarse de que los datos tengan una estructura válida
+    if (!data) {
+        console.warn('[updateChartData] Advertencia: No se proporcionaron datos');
+        data = { current_latency: -1, loss: 100, stats: {}, latencies: [] };
+    }
+    
+    try {
+        // Verificar que el gráfico tenga la estructura esperada
+        if (!chart.data || !chart.data.datasets || chart.data.datasets.length === 0) {
+            console.error('[updateChartData] Error: Estructura del gráfico no válida');
+            return false;
+        }
+        
+        // Inicializar arrays si no existen
+        chart.data.labels = chart.data.labels || [];
+        chart.data.datasets[0].data = chart.data.datasets[0].data || [];
+        
+        // Verificar si existe la serie de pérdida de paquetes
+        const hasLossSeries = chart.data.datasets.length > 1;
+        if (hasLossSeries) {
+            chart.data.datasets[1].data = chart.data.datasets[1].data || [];
+        }
+        
+        // Obtener referencias a los datos
+        const labels = chart.data.labels;
+        const latencyData = chart.data.datasets[0].data;
+        const lossData = hasLossSeries ? chart.data.datasets[1].data : [];
+        
+        // Obtener la latencia actual con validación
+        let currentLatency = -1;
+        if (data.current_latency !== undefined && data.current_latency !== null) {
+            const parsed = parseFloat(data.current_latency);
+            if (!isNaN(parsed) && parsed > 0) {
+                currentLatency = Math.round(parsed * 100) / 100; // Redondear a 2 decimales
+            }
+        }
+        
+        // Si no hay latencia válida, buscar en el array de latencias
+        if (currentLatency <= 0 && data.latencies && Array.isArray(data.latencies)) {
+            // Buscar la última latencia válida
+            for (let i = data.latencies.length - 1; i >= 0; i--) {
+                const latency = parseFloat(data.latencies[i]);
+                if (!isNaN(latency) && latency > 0) {
+                    currentLatency = Math.round(latency * 100) / 100;
+                    break;
+                }
+            }
+        }
+        
+        // Obtener la pérdida de paquetes (asegurarse de que esté entre 0 y 100)
+        let currentLoss = 100;
+        if (data.loss !== undefined && data.loss !== null) {
+            const loss = parseFloat(data.loss);
+            if (!isNaN(loss)) {
+                currentLoss = Math.min(100, Math.max(0, loss));
+                currentLoss = Math.round(currentLoss * 100) / 100;
+            }
+        }
+        
+        // Crear una nueva etiqueta de tiempo
+        const now = new Date();
+        const timeLabel = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        
+        // Mantener un máximo de 60 puntos de datos
+        const maxPoints = 60;
+        if (labels.length >= maxPoints) {
+            labels.shift();
+            latencyData.shift();
+            if (hasLossSeries && lossData.length > 0) {
+                lossData.shift();
+                console.log('[updateChartData] Eliminado punto de datos de pérdida más antiguo');
+            }
+        }
+        
+        // Agregar nuevos puntos de datos
+        console.log(`[updateChartData] Agregando nuevo punto - Hora: ${timeLabel}, Latencia: ${currentLatency > 0 ? currentLatency + 'ms' : 'N/A'}, Pérdida: ${currentLoss}%`);
+        
+        // Agregar nueva etiqueta de tiempo
+        labels.push(timeLabel);
+        
+        // Usar null para valores no válidos (Chart.js los omite)
+        const dataPoint = currentLatency > 0 ? currentLatency : null;
+        latencyData.push(dataPoint);
+        
+        // Actualizar la serie de pérdida de paquetes si existe
+        if (hasLossSeries) {
+            lossData.push(currentLoss);
+            console.log(`[updateChartData] Actualizada serie de pérdida - Nuevo valor: ${currentLoss}%`);
+        }
+        
+        try {
+            // Forzar actualización del gráfico
+            console.log('[updateChartData] Actualizando gráfico...');
+            
+            // Actualizar las escalas para asegurar que se muestren todos los datos
+            if (chart.options.scales && chart.options.scales.y) {
+                // Asegurar que el eje Y se ajuste a los datos de latencia
+                const validLatencies = latencyData.filter(v => v !== null && v > 0);
+                if (validLatencies.length > 0) {
+                    const maxLatency = Math.max(...validLatencies);
+                    // Añadir un 20% de margen en la parte superior
+                    chart.options.scales.y.max = maxLatency * 1.2;
+                    console.log(`[updateChartData] Ajustada escala Y a máximo: ${maxLatency * 1.2}ms`);
+                }
+            }
+            
+            // Actualizar el gráfico sin animación para mejor rendimiento
+            chart.update({
+                duration: 0, // Sin animación
+                lazy: true,  // Actualización diferida
+                easing: 'linear'
+            });
+            
+            console.log('[updateChartData] Gráfico actualizado correctamente');
+            
+        } catch (updateError) {
+            console.error('[updateChartData] Error al actualizar el gráfico:', updateError);
+            // Intentar una actualización simple si falla la actualización con opciones
+            try {
+                chart.update();
+            } catch (simpleError) {
+                console.error('[updateChartData] Error en actualización simple del gráfico:', simpleError);
+            }
+        }
+        
+    } catch (error) {
+        console.error('[updateChartData] Error inesperado:', error);
+    }
+    
+    return true;
+}
+
+// Función para limpiar el monitor
+function clearMonitor(chart, button, service) {
+    if (!button) return;
+    
+    // Limpiar el gráfico si existe
+    if (chart) {
+        try {
+            // Marcar el gráfico como destruido para evitar actualizaciones posteriores
+            chart._destroyed = true;
+            
+            // Detener cualquier animación en curso
+            if (typeof chart.stop === 'function') {
+                chart.stop();
+            }
+            
+            // Limpiar datos del gráfico
+            if (chart.data) {
+                chart.data.labels = [];
+                if (chart.data.datasets) {
+                    chart.data.datasets.forEach(dataset => {
+                        if (dataset.data) dataset.data = [];
+                    });
+                }
+            }
+            
+            // Actualizar el gráfico con animación deshabilitada
+            try {
+                if (typeof chart.update === 'function') {
+                    chart.update('none');
+                }
+            } catch (updateError) {
+                console.warn('[clearMonitor] No se pudo actualizar el gráfico antes de destruirlo:', updateError);
+            }
+            
+            // Destruir la instancia del gráfico
+            if (typeof chart.destroy === 'function') {
+                chart.destroy();
+            }
+        } catch (error) {
+            console.error('[clearMonitor] Error al limpiar el gráfico:', error);
+        } finally {
+            // Asegurarse de que el gráfico no se pueda usar más
+            chart = null;
+        }
+    }
+    
+    // Restablecer el botón
+    button.classList.remove('active');
+    button.innerHTML = `<i class="fas fa-play"></i> Monitorear ${service === 'primary' ? 'Principal' : 'Secundario'}`;
+    
+    // Obtener el ID único del servicio (combinación de ID del servidor y tipo de servicio)
+    const serverCard = button.closest('.server-card');
+    const serverId = serverCard?.dataset?.id;
+    const serviceKey = serverId ? `${serverId}-${service}` : service;
+    
+    // Reiniciar el contador de paquetes perdidos para este servicio
+    if (lostPacketsCounters[serviceKey] !== undefined) {
+        console.log(`[clearMonitor] Reiniciando contador de paquetes perdidos para ${serviceKey}`);
+        lostPacketsCounters[serviceKey] = 0;
+    }
+    
+    // Ocultar y limpiar el monitor
+    const monitor = serverCard?.querySelector(`.ping-monitor.${service}-monitor`);
+    if (monitor) {
+        monitor.style.display = 'none';
+        // Limpiar cualquier referencia al gráfico antiguo
+        const canvas = monitor.querySelector('canvas');
+        if (canvas) {
+            const context = canvas.getContext('2d');
+            if (context) {
+                context.clearRect(0, 0, canvas.width, canvas.height);
+            }
+        }
+    }
+    
+    // Limpiar cualquier intervalo de actualización pendiente
+    if (window.monitoringInterval) {
+        console.log('[clearMonitor] Limpiando intervalo global de monitoreo');
+        clearInterval(window.monitoringInterval);
+        window.monitoringInterval = null;
+    }
+    
+    // Limpiar el intervalo específico del botón si existe
+    if (button.interval) {
+        console.log('[clearMonitor] Limpiando intervalo específico del botón');
+        clearInterval(button.interval);
+        button.interval = null;
+    }
+    
+    // Resetear el estado de monitoreo
+    window.isUpdating = false;
+    window.isMonitoring = false;
+    
+    // Limpiar cualquier referencia pendiente
+    if (typeof chart === 'object' && chart !== null) {
+        try {
+            chart._destroyed = true;
+            if (typeof chart.destroy === 'function') {
+                chart.destroy();
+            }
+        } catch (e) {
+            console.warn('Error al limpiar referencia del gráfico:', e);
+        } finally {
+            chart = null;
+        }
+    }
+}
+
+// Función para iniciar/detener el monitoreo
+window.toggleMonitoring = async function(ip, id, chart, button) {
+    const service = button.getAttribute('data-service');
+    const buttonIsActive = button.classList.contains('active');
+    const serverCard = button.closest('.server-card');
+    const monitor = serverCard?.querySelector(`.ping-monitor.${service}-monitor`);
+    
+    try {
+        if (buttonIsActive) {
+            // Cambiar el estado del botón inmediatamente para feedback visual
+            button.disabled = true;
+            button.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Deteniendo...`;
+            
+            // Detener el intervalo de monitoreo si existe
+            if (window.monitoringInterval) {
+                console.log('[toggleMonitoring] Deteniendo intervalo global de monitoreo');
+                clearInterval(window.monitoringInterval);
+                window.monitoringInterval = null;
+            }
+            // Detener el intervalo específico del botón si existe
+            if (button.interval) {
+                console.log('[toggleMonitoring] Deteniendo intervalo específico del botón');
+                clearInterval(button.interval);
+                button.interval = null;
+            }
+            window.isMonitoring = false;
+            
+            // Notificar al backend, pero no esperar la respuesta para limpiar la interfaz
+            const stopMonitoring = async () => {
+                try {
+                    const response = await fetch(`/stop_monitor/${ip}`, { 
+                        method: 'POST',
+                        // No esperar más de 1 segundo por la respuesta
+                        signal: AbortSignal.timeout(1000)
+                    });
+                    
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(errorText || 'Error al detener el monitoreo');
+                    }
+                    
+                    const result = await response.json();
+                    
+                    if (result.status !== 'success') {
+                        console.warn('El servidor reportó un problema al detener el monitoreo:', result.message);
+                        // No mostramos notificación de error para no molestar al usuario
+                    }
+                } catch (error) {
+                    if (error.name === 'TimeoutError') {
+                        console.warn('Tiempo de espera agotado al detener el monitoreo, pero continuando con la limpieza local');
+                    } else {
+                        console.warn('Error al detener el monitoreo en el servidor (continuando con limpieza local):', error);
+                    }
+                    // No mostramos notificación de error para no molestar al usuario
+                }
+            };
+            
+            // Iniciar la limpieza local de inmediato
+            clearMonitor(chart, button, service);
+            button.disabled = false;
+            
+            // Mostrar notificación de éxito de inmediato
+            showNotification('success', `Monitoreo detenido para ${ip}`);
+            
+            // Iniciar la detención en el servidor en segundo plano
+            stopMonitoring().catch(e => {
+                console.warn('Error en la tarea en segundo plano para detener el monitoreo:', e);
+            });
+        } else {
+            // Iniciar el monitoreo
+            button.classList.add('active');
+            button.innerHTML = `<i class="fas fa-stop"></i> Detener Monitoreo ${service === 'primary' ? 'Principal' : 'Secundario'}`;
+            
+            // Mostrar el monitor
+            if (monitor) {
+                monitor.style.display = 'block';
+                monitor.style.height = '180px';
+                monitor.style.width = '100%';
+            }
+            
+            // Inicializar variables de estado
+            window.isUpdating = false;
+            
+            // Función para actualizar los datos
+            const updateData = async () => {
+                if (window.isUpdating) {
+                    console.log('[updateData] Ya hay una actualización en curso, omitiendo...');
                     return;
                 }
                 
-                button.interval = setInterval(updateData, 1000);
-            })
-            .catch(error => {
+                window.isUpdating = true;
+                console.log(`[updateData] Iniciando actualización para IP: ${ip}`);
+                
+                try {
+                    // Obtener datos de ping del backend con timestamp para evitar caché
+                    const timestamp = new Date().getTime();
+                    console.log(`[updateData] Solicitando datos a /get_ping_data/${ip}?_=${timestamp}`);
+                    
+                    const response = await fetch(`/get_ping_data/${ip}?_=${timestamp}`, {
+                        method: 'GET',
+                        cache: 'no-store',
+                        headers: {
+                            'Cache-Control': 'no-cache, no-store, must-revalidate',
+                            'Pragma': 'no-cache',
+                            'Expires': '0'
+                        }
+                    });
+                    
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`Error HTTP ${response.status}: ${errorText}`);
+                    }
+                    
+                    const data = await response.json();
+                    console.log('[updateData] Datos recibidos:', JSON.stringify(data, null, 2));
+                    
+                    // Verificar si hay un error en la respuesta
+                    if (data.error) {
+                        throw new Error(`Error del servidor: ${data.error}`);
+                    }
+                    
+                    // Asegurarse de que tenemos los datos necesarios
+                    if (!data.latencies || !Array.isArray(data.latencies)) {
+                        console.warn('[updateData] No se encontró array de latencias, inicializando vacío');
+                        data.latencies = [];
+                    } else {
+                        // Asegurarse de que todas las latencias sean números positivos
+                        data.latencies = data.latencies
+                            .map(l => parseFloat(l))
+                            .filter(l => !isNaN(l) && l > 0);
+                        console.log(`[updateData] Latencias procesadas: ${data.latencies.length} valores válidos`);
+                    }
+                    
+                    // Inicializar stats si no existe
+                    if (!data.stats) {
+                        console.warn('[updateData] No se encontró objeto stats, inicializando');
+                        data.stats = {};
+                    }
+                    
+                    // Asegurar que los contadores estén presentes y sean números válidos
+                    data.stats.total_pings = Math.max(0, parseInt(data.stats.total_pings) || 0);
+                    data.stats.successful_pings = Math.max(0, parseInt(data.stats.successful_pings) || 0);
+                    data.stats.failed_pings = Math.max(0, parseInt(data.stats.failed_pings) || 0);
+                    
+                    console.log(`[updateData] Contadores - Totales: ${data.stats.total_pings}, ` +
+                                `Exitosos: ${data.stats.successful_pings}, Fallidos: ${data.stats.failed_pings}`);
+                    
+                    // Asegurar que las estadísticas de latencia sean números válidos
+                    data.stats.avg_latency = Math.max(0, parseFloat(data.stats.avg_latency) || 0);
+                    data.stats.min_latency = Math.max(0, parseFloat(data.stats.min_latency) || 0);
+                    data.stats.max_latency = Math.max(0, parseFloat(data.stats.max_latency) || 0);
+                    
+                    // Asegurar que current_latency sea un número válido
+                    if (data.current_latency === undefined || data.current_latency === null) {
+                        // Usar la última latencia válida si está disponible
+                        data.current_latency = data.latencies.length > 0 ? 
+                            data.latencies[data.latencies.length - 1] : -1;
+                        console.log(`[updateData] Usando última latencia del array: ${data.current_latency}`);
+                    } else {
+                        // Asegurar que sea un número positivo
+                        const latency = parseFloat(data.current_latency);
+                        data.current_latency = !isNaN(latency) && latency > 0 ? latency : -1;
+                        console.log(`[updateData] Latencia actual: ${data.current_latency}`);
+                    }
+                    
+                    // Asegurar que loss sea un número entre 0 y 100
+                    if (data.loss === undefined || data.loss === null) {
+                        // Calcular pérdida basada en los contadores si están disponibles
+                        const total = data.stats.total_pings || 0;
+                        data.loss = total > 0 ? 
+                            ((data.stats.failed_pings || 0) / total) * 100 : 100;
+                        console.log(`[updateData] Pérdida calculada: ${data.loss}% (de contadores)`);
+                    } else {
+                        // Asegurar que sea un número entre 0 y 100
+                        const loss = parseFloat(data.loss);
+                        data.loss = Math.min(100, Math.max(0, isNaN(loss) ? 100 : loss));
+                        console.log(`[updateData] Pérdida recibida: ${data.loss}%`);
+                    }
+                    
+                    // Calcular estadísticas de latencia si hay datos disponibles
+                    if (data.latencies.length > 0) {
+                        // Actualizar estadísticas si no están presentes
+                        if (!data.stats.min_latency || data.stats.min_latency <= 0) {
+                            data.stats.min_latency = Math.min(...data.latencies);
+                            console.log(`[updateData] Mínima latencia calculada: ${data.stats.min_latency}`);
+                        }
+                        if (!data.stats.max_latency || data.stats.max_latency <= 0) {
+                            data.stats.max_latency = Math.max(...data.latencies);
+                            console.log(`[updateData] Máxima latencia calculada: ${data.stats.max_latency}`);
+                        }
+                        if (!data.stats.avg_latency || data.stats.avg_latency <= 0) {
+                            const sum = data.latencies.reduce((a, b) => a + b, 0);
+                            data.stats.avg_latency = sum / data.latencies.length;
+                            console.log(`[updateData] Latencia promedio calculada: ${data.stats.avg_latency}`);
+                        }
+                    } else {
+                        console.warn('[updateData] No hay datos de latencia disponibles para calcular estadísticas');
+                    }
+                    
+                    // Verificar si hay un cambio significativo en los datos
+                    const currentData = {
+                        latency: data.current_latency,
+                        loss: data.loss,
+                        timestamp: new Date().toISOString()
+                    };
+                    
+                    console.log('[updateData] Datos actuales:', JSON.stringify(currentData, null, 2));
+                    
+                    // Actualizar la interfaz de usuario con los nuevos datos
+                    try {
+                        console.log('[updateData] Actualizando interfaz de usuario...');
+                        updateStatsUI(monitor, data, service);
+                        console.log('[updateData] Interfaz de usuario actualizada correctamente');
+                    } catch (uiError) {
+                        console.error('[updateData] Error al actualizar la interfaz de usuario:', uiError);
+                    }
+                    
+                    // Actualizar el gráfico
+                    if (chart) {
+                        try {
+                            console.log('[updateData] Actualizando gráfico...');
+                            updateChartData(chart, data);
+                            console.log('[updateData] Gráfico actualizado correctamente');
+                        } catch (chartError) {
+                            console.error('[updateData] Error al actualizar el gráfico:', chartError);
+                        }
+                    } else {
+                        console.warn('[updateData] No se pudo actualizar el gráfico: referencia no válida');
+                    }
+                    
+                    // Verificar si hay cambios significativos en los datos
+                    const previousData = window.lastPingData ? window.lastPingData[ip] : null;
+                    const hasChanges = !previousData || 
+                        previousData.current_latency !== data.current_latency ||
+                        previousData.loss !== data.loss;
+                    
+                    if (!hasChanges) {
+                        console.log('[updateData] No hay cambios en los datos, omitiendo actualización de UI');
+                    } else {
+                        console.log('[updateData] Actualizando interfaz con datos:', {
+                            currentLatency: data.current_latency,
+                            loss: data.loss,
+                            stats: data.stats,
+                            latenciesCount: data.latencies ? data.latencies.length : 0
+                        });
+                        
+                        // Actualizar la interfaz de usuario
+                        if (monitor) {
+                            try {
+                                // Actualizar estadísticas en la UI
+                                updateStatsUI(monitor, data, service);
+                                
+                                // Forzar actualización del DOM
+                                monitor.style.display = 'none';
+                                void monitor.offsetHeight; // Trigger reflow
+                                monitor.style.display = 'block';
+                                
+                                console.log('[updateData] Interfaz actualizada correctamente');
+                            } catch (uiError) {
+                                console.error('[updateData] Error al actualizar la interfaz:', uiError);
+                            }
+                        } else {
+                            console.warn('[updateData] No se encontró el elemento monitor para actualizar');
+                        }
+                    }
+                    
+                    // Almacenar los datos actuales para la próxima comparación
+                    if (!window.lastPingData) window.lastPingData = {};
+                    window.lastPingData[ip] = {
+                        ...data,
+                        timestamp: new Date().toISOString()
+                    };
+                    
+                } catch (error) {
+                    console.error('[updateData] Error al obtener datos de ping:', error);
+                    showNotification('error', `Error al obtener datos: ${error.message}`);
+                } finally {
+                    window.isUpdating = false;
+                }
+            };
+            
+            // Iniciar el monitoreo en el backend
+            try {
+                const response = await fetch(`/start_monitor/${ip}`);
+                const result = await response.json();
+                
+                if (result.error) {
+                    throw new Error(result.error);
+                }
+                
+                // Iniciar la actualización periódica
+                button.interval = setInterval(updateData, 2000);
+                
+                // Hacer la primera actualización de inmediato
+                updateData();
+                
+                showNotification('success', `Monitoreo iniciado para ${ip}`);
+                
+            } catch (error) {
                 console.error('Error al iniciar el monitoreo:', error);
-                alert('Error al iniciar el monitoreo');
-            });
+                showNotification('error', `Error al iniciar el monitoreo: ${error.message}`);
+                clearMonitor(chart, button, service);
+            }
+        }
+    } catch (error) {
+        console.error('Error en toggleMonitoring:', error);
+        showNotification('error', `Error: ${error.message}`);
     }
 };
 
@@ -790,27 +1483,335 @@ document.querySelectorAll('.delete-server').forEach(button => {
     });
 });
 
+// Función para mostrar/ocultar el popup
+function togglePingPopup(show = true) {
+    try {
+        console.log('togglePingPopup llamado con show =', show);
+        
+        // Crear el overlay si no existe
+        let overlay = document.getElementById('pingResultOverlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'pingResultOverlay';
+            overlay.style.cssText = 'display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9998; opacity: 0; transition: opacity 0.3s;';
+            document.body.appendChild(overlay);
+        }
+        
+        // Crear el popup si no existe
+        let popup = document.getElementById('pingResultPopup');
+        if (!popup) {
+            popup = document.createElement('div');
+            popup.id = 'pingResultPopup';
+            popup.style.cssText = 'display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 8px; z-index: 9999; opacity: 0; transition: opacity 0.3s; width: 90%; max-width: 500px; max-height: 80vh; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.3); border: 1px solid #ddd;';
+            popup.innerHTML = `
+                <button id="closePingPopup" style="position: absolute; top: 10px; right: 10px; background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #666; outline: none;">&times;</button>
+                <h5 style="margin-top: 0; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #eee; font-size: 1.2rem; color: #333;">
+                    <i class="fas fa-server"></i> Resultado del Ping
+                </h5>
+                <div class="ping-result-body" style="min-height: 50px;"></div>
+            `;
+            document.body.appendChild(popup);
+            
+            // Agregar manejador de cierre al botón
+            const closeButton = document.getElementById('closePingPopup');
+            closeButton.onclick = (e) => {
+                e.stopPropagation();
+                togglePingPopup(false);
+            };
+            
+            // Agregar manejador para el overlay
+            overlay.onclick = () => togglePingPopup(false);
+            
+            // Agregar manejador para la tecla ESC
+            const keydownHandler = (e) => {
+                if (e.key === 'Escape') {
+                    togglePingPopup(false);
+                    e.preventDefault();
+                }
+            };
+            document.addEventListener('keydown', keydownHandler);
+            
+            // Guardar referencia al manejador para limpiarlo después
+            popup._keydownHandler = keydownHandler;
+        }
+        
+        if (show) {
+            console.log('Mostrando popup');
+            
+            // Asegurarse de que el popup esté en la parte superior
+            popup.style.zIndex = '10000';
+            overlay.style.zIndex = '9999';
+            
+            // Mostrar el overlay
+            overlay.style.display = 'block';
+            overlay.style.opacity = '0.7';
+            
+            // Mostrar el popup
+            popup.style.display = 'block';
+            popup.style.opacity = '1';
+            
+            // Forzar un reflow para asegurar que las transiciones funcionen
+            void popup.offsetHeight;
+            
+            // Bloquear el scroll del body
+            document.body.style.overflow = 'hidden';
+            
+            // Registrar la posición y estado del popup para depuración
+            const popupRect = popup.getBoundingClientRect();
+            console.log('Popup state:', {
+                display: popup.style.display,
+                opacity: popup.style.opacity,
+                zIndex: popup.style.zIndex,
+                position: popup.style.position,
+                top: popup.style.top,
+                left: popup.style.left,
+                transform: popup.style.transform,
+                dimensions: { width: popupRect.width, height: popupRect.height },
+                viewport: { width: window.innerWidth, height: window.innerHeight }
+            });
+            
+        } else {
+            console.log('Ocultando popup');
+            
+            // Ocultar el popup
+            popup.style.opacity = '0';
+            overlay.style.opacity = '0';
+            
+            // Esperar a que termine la transición antes de ocultar
+            setTimeout(() => {
+                if (popup) popup.style.display = 'none';
+                if (overlay) overlay.style.display = 'none';
+                document.body.style.overflow = '';
+                
+                // Limpiar manejador de teclado si existe
+                if (popup && popup._keydownHandler) {
+                    document.removeEventListener('keydown', popup._keydownHandler);
+                    delete popup._keydownHandler;
+                }
+            }, 300);
+        }
+    } catch (error) {
+        console.error('Error en togglePingPopup:', error);
+        // Usar alert temporal para depuración
+        alert('Error al mostrar/ocultar el popup: ' + error.message);
+    }
+}
+
+// Función para mostrar el resultado del ping en un popup
+function showPingResult(ip, data) {
+    try {
+        console.log('Mostrando resultado del ping:', {ip, data});
+        
+        // Eliminar popup existente si lo hay y si tiene un padre
+        const oldPopup = document.getElementById('pingResultPopup');
+        if (oldPopup && oldPopup.parentNode) {
+            oldPopup.parentNode.removeChild(oldPopup);
+        }
+        
+        // Eliminar overlay existente si lo hay y si tiene un padre
+        const oldOverlay = document.getElementById('pingResultOverlay');
+        if (oldOverlay && oldOverlay.parentNode) {
+            oldOverlay.parentNode.removeChild(oldOverlay);
+        }
+        
+        // Crear el overlay
+        const overlayElement = document.createElement('div');
+        overlayElement.id = 'pingResultOverlay';
+        overlayElement.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9999;';
+        
+        // Crear el popup
+        const popup = document.createElement('div');
+        popup.id = 'pingResultPopup';
+        popup.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 8px; z-index: 10000; width: 90%; max-width: 500px; max-height: 80vh; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.3); border: 1px solid #ddd;';
+        
+        // Crear el contenido
+        let title, content;
+        
+        if (data.status === 'success') {
+            title = '<i class="fas fa-check-circle" style="color: #10b981; margin-right: 8px;"></i> Ping exitoso';
+            content = `
+                <div style="background: #f0fdf4; border-left: 4px solid #10b981; padding: 1rem; border-radius: 4px; margin-top: 10px;">
+                    <div style="margin-bottom: 8px;"><strong>IP:</strong> ${ip}</div>
+                    <div style="margin-bottom: 8px;"><strong>Estado:</strong> ${data.message || 'Conexión exitosa'}</div>
+                    <div style="margin-bottom: 12px;"><strong>Tiempo de respuesta:</strong> ${data.latency !== undefined ? data.latency + ' ms' : 'N/A'}</div>
+                    <div style="margin: 15px 0 8px 0; font-weight: bold;">Detalles:</div>
+                    <pre style="background: white; padding: 12px; border-radius: 4px; overflow-x: auto; margin: 0 0 12px 0; border: 1px solid #e2e8f0; font-size: 0.9em; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word;">
+                        ${data.output || 'No hay detalles disponibles'}
+                    </pre>
+                    <div style="font-size: 0.8em; color: #6b7280; text-align: right;">${new Date().toLocaleString()}</div>
+                </div>`;
+        } else {
+            title = '<i class="fas fa-times-circle" style="color: #ef4444; margin-right: 8px;"></i> Error en el ping';
+            content = `
+                <div style="background: #fef2f2; border-left: 4px solid #ef4444; padding: 1rem; border-radius: 4px; margin-top: 10px;">
+                    <div style="margin-bottom: 8px;"><strong>IP:</strong> ${ip}</div>
+                    <div style="margin-bottom: 12px;"><strong>Error:</strong> ${data.message || 'Error desconocido'}</div>
+                    ${data.output ? `
+                    <div style="margin: 15px 0 8px 0; font-weight: bold;">Salida del comando:</div>
+                    <pre style="background: white; padding: 12px; border-radius: 4px; overflow-x: auto; margin: 0 0 12px 0; border: 1px solid #fecaca; font-size: 0.9em; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word;">
+                        ${data.output}
+                    </pre>
+                    ` : ''}
+                    <div style="font-size: 0.8em; color: #6b7280; text-align: right;">${new Date().toLocaleString()}</div>
+                </div>`;
+        }
+        
+        // Configurar el contenido del popup
+        popup.innerHTML = `
+            <button id="closePingPopup" style="position: absolute; top: 10px; right: 10px; background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #666; outline: none;">&times;</button>
+            <h5 style="margin-top: 0; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #eee; font-size: 1.2rem; color: #333;">
+                ${title}
+            </h5>
+            <div class="ping-result-body" style="min-height: 50px;">
+                ${content}
+            </div>
+        `;
+        
+        // Verificar que el contenido se haya generado correctamente
+        if (!popup.querySelector('.ping-result-body')) {
+            throw new Error('No se pudo crear el contenido del popup');
+        }
+        
+        // El contenido ya se estableció en el innerHTML anterior
+        
+        // Agregar elementos al documento
+        document.body.appendChild(overlayElement);
+        document.body.appendChild(popup);
+        
+        // Configurar manejador de cierre
+        const closeButton = popup.querySelector('#closePingPopup');
+        if (closeButton) {
+            closeButton.onclick = (e) => {
+                e.stopPropagation();
+                popup.style.display = 'none';
+                overlayElement.style.display = 'none';
+                document.body.style.overflow = '';
+            };
+        }
+        
+        // Cerrar al hacer clic en el overlay
+        overlayElement.onclick = () => {
+            popup.style.display = 'none';
+            overlayElement.style.display = 'none';
+            document.body.style.overflow = '';
+        };
+        
+        // Cerrar con tecla ESC
+        const keydownHandler = (e) => {
+            if (e.key === 'Escape') {
+                popup.style.display = 'none';
+                overlayElement.style.display = 'none';
+                document.body.style.overflow = '';
+                document.removeEventListener('keydown', keydownHandler);
+            }
+        };
+        document.addEventListener('keydown', keydownHandler);
+        
+        // Forzar un reflow para asegurar que se muestre correctamente
+        void popup.offsetHeight;
+        
+        // Mostrar el popup
+        popup.style.display = 'block';
+        popup.style.opacity = '1';
+        popup.style.zIndex = '10000';
+        
+        // Bloquear scroll
+        document.body.style.overflow = 'hidden';
+        
+    } catch (error) {
+        console.error('Error en showPingResult:', error);
+        // Mostrar un mensaje de error simple si falla el popup
+        alert(`Error al mostrar resultados del ping a ${ip}: ${error.message}`);
+    }
+}
+
 // Manejo de ping a servidores
 document.querySelectorAll('.ping-server').forEach(button => {
-    button.addEventListener('click', function() {
+    button.addEventListener('click', async function() {
         const ip = this.getAttribute('data-ip');
-        fetch('/ping_server', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: `ip=${ip}`
-        })
-        .then(response => response.json())
-        .then(data => {
-            const popup = document.querySelector('.ping-result-popup');
-            const resultBody = document.querySelector('.ping-result-body');
-            resultBody.innerHTML = `${data.result || data.error}`;
-            popup.style.display = 'block'; // Mostrar la ventana emergente
-        })
-        .catch(error => {
-            console.error('Error:', error);
-        });
+        const originalText = this.textContent;
+        const originalHTML = this.innerHTML;
+        
+        if (!ip) {
+            console.error('No se proporcionó una dirección IP');
+            showNotification('error', 'No se proporcionó una dirección IP');
+            return;
+        }
+        
+        // Mostrar indicador de carga
+        this.disabled = true;
+        this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Probando...';
+        
+        try {
+            console.log(`Enviando ping a ${ip}...`);
+            
+            // Usar setTimeout para asegurar que la interfaz se actualice
+            setTimeout(async () => {
+                try {
+                    const response = await fetch('/ping_server', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+                        },
+                        body: `ip=${encodeURIComponent(ip)}`,
+                        credentials: 'same-origin'
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`Error HTTP: ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    console.log('Respuesta del servidor:', data);
+                    
+                    // Mostrar el resultado en el popup
+                    console.log('Llamando a showPingResult con:', {ip, data});
+                    showPingResult(ip, data);
+                    console.log('showPingResult completado');
+                    
+                } catch (error) {
+                    console.error('Error al realizar el ping:', error);
+                    showNotification('error', `Error al realizar el ping: ${error.message}`);
+                } finally {
+                    // Restaurar el botón
+                    button.disabled = false;
+                    button.innerHTML = originalHTML;
+                    button.textContent = originalText;
+                }
+            }, 100); // Pequeño retraso para permitir la actualización de la UI
+            
+        } catch (error) {
+            console.error('Error inesperado:', error);
+            showNotification('error', `Error inesperado: ${error.message}`);
+            
+            // Asegurarse de restaurar el botón en caso de error
+            button.disabled = false;
+            button.innerHTML = originalHTML;
+            button.textContent = originalText;
+            
+            // Mostrar error en la interfaz
+            const popup = document.getElementById('pingResultPopup');
+            const popupTitle = popup.querySelector('h5');
+            const resultBody = popup.querySelector('.ping-result-body');
+            
+            popupTitle.innerHTML = '<i class="fas fa-exclamation-triangle ping-error"></i> Error de conexión';
+            popupTitle.className = 'ping-error';
+            
+            resultBody.innerHTML = `
+                <div class="ping-error">
+                    <div><strong>Error inesperado:</strong> ${error.message || 'Error desconocido'}</div>
+                    <div class="mt-2"><strong>Posibles causas:</strong></div>
+                    <ul>
+                        <li>El servidor no está respondiendo</li>
+                        <li>Problemas de red o conectividad</li>
+                        <li>La IP puede ser incorrecta</li>
+                    </ul>
+                    <small class="text-muted">${new Date().toLocaleString()}</small>
+                </div>`;
+                
+            // Mostrar el popup
+            togglePingPopup(true);
+        }
     });
 });
 

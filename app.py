@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session, g, jsonify
+from flask_sse import sse
 import sqlite3
 import pandas as pd
 import matplotlib
@@ -8,14 +9,142 @@ from io import BytesIO
 import base64
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import subprocess
+import re
+import time
 import threading
 import queue
-import time
-from flask_sse import sse
 import socket
+import struct
+import select
+import random
+import signal
+from datetime import datetime, timedelta
+from contextlib import contextmanager
 
+# Constantes para el ping personalizado
+ICMP_ECHO_REQUEST = 8
+DEFAULT_TIMEOUT = 10  # segundos
+DEFAULT_COUNT = 1
+
+class TimeoutError(Exception):
+    pass
+
+@contextmanager
+def timeout(seconds):
+    def signal_handler(signum, frame):
+        raise TimeoutError("Tiempo de espera agotado")
+    
+    signal.signal(signal.SIGALRM, signal_handler)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+
+def checksum(source_string):
+    """
+    Calcula el checksum de la cabecera ICMP
+    """
+    sum = 0
+    count_to = (len(source_string) // 2) * 2
+    count = 0
+    while count < count_to:
+        this_val = source_string[count + 1] * 256 + source_string[count]
+        sum = sum + this_val
+        sum = sum & 0xffffffff
+        count = count + 2
+
+    if count_to < len(source_string):
+        sum = sum + source_string[-1]
+        sum = sum & 0xffffffff
+
+    sum = (sum >> 16) + (sum & 0xffff)
+    sum = sum + (sum >> 16)
+    answer = ~sum
+    answer = answer & 0xffff
+    answer = answer >> 8 | (answer << 8 & 0xff00)
+    return answer
+
+def ping(host, timeout=10):
+    """
+    Envía un ping a la dirección IP especificada usando el comando del sistema.
+    Devuelve una tupla (latencia_ms, error_type).
+    """
+    # Comando para Linux/Unix con formato más detallado para facilitar el parsing
+    cmd = ['ping', '-c', '1', '-W', str(timeout), '-v', str(host)]
+    
+    try:
+        # Ejecutar el comando ping
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True
+        )
+        
+        # Esperar a que termine el comando con un timeout ligeramente mayor
+        try:
+            stdout, stderr = process.communicate(timeout=timeout + 2)
+            output = stdout + stderr
+            
+            # Debug: Mostrar la salida completa para diagnóstico
+            print(f"[ping] Salida del comando ping para {host}:")
+            print(output[:500])  # Mostrar los primeros 500 caracteres para diagnóstico
+            
+            # Verificar el código de salida
+            if process.returncode == 0:
+                # Intentar diferentes patrones para extraer la latencia
+                patterns = [
+                    r'time=([\d.]+)\s*ms',  # Formato estándar
+                    r'time[<>=]([\d.]+)\s*ms',  # Algunas versiones usan time<X>ms
+                    r'([\d.]+)\s*ms\s*$'  # Último número antes de ms al final de la línea
+                ]
+                
+                for pattern in patterns:
+                    match = re.search(pattern, output, re.MULTILINE)
+                    if match:
+                        try:
+                            latency = float(match.group(1))
+                            return latency, None
+                        except (ValueError, IndexError) as e:
+                            print(f"[ping] Error al convertir la latencia: {e}")
+                            continue
+                
+                # Si llegamos aquí, no se pudo extraer la latencia
+                print(f"[ping] No se pudo extraer la latencia de la salida")
+                return None, 'invalid_output'
+                
+            else:
+                # Analizar el error
+                output_lower = output.lower()
+                if '100% packet loss' in output_lower:
+                    print(f"[ping] Timeout o pérdida de paquetes al hacer ping a {host}")
+                    return None, 'timeout'
+                elif 'name or service not known' in output_lower:
+                    print(f"[ping] No se pudo resolver el nombre de host: {host}")
+                    return None, 'dns_error'
+                elif 'network is unreachable' in output_lower:
+                    print(f"[ping] Red inalcanzable: {host}")
+                    return None, 'network_unreachable'
+                elif 'permission denied' in output_lower:
+                    print("[ping] Error de permisos: Se necesitan privilegios de superusuario")
+                    return None, 'permission_denied'
+                else:
+                    print(f"[ping] Error en el comando ping (código {process.returncode}): {output[:500]}...")
+                    return None, 'ping_error'
+                    
+        except subprocess.TimeoutExpired:
+            process.kill()
+            return None, 'timeout'
+            
+    except FileNotFoundError:
+        print("[ping] Comando 'ping' no encontrado")
+        return None, 'command_not_found'
+    except Exception as e:
+        print(f"[ping] Error inesperado: {str(e)}")
+        return None, 'error'
 
 app = Flask(__name__)
 app.secret_key = 'tu_clave_secreta_segura_y_unica_para_sesiones_2024'  # Clave secreta para sesiones
@@ -23,6 +152,10 @@ app.secret_key = 'tu_clave_secreta_segura_y_unica_para_sesiones_2024'  # Clave s
 # Inicializar SSE
 app.config['REDIS_URL'] = "redis://localhost"
 app.register_blueprint(sse, url_prefix='/stream')
+
+# Variables globales para monitoreo
+monitoring_threads = {}
+monitoring_events = {}
 
 # Variable global para caché de datos de ping
 # Función para validar IP
@@ -36,30 +169,228 @@ def is_valid_ip(ip):
 class PingCache:
     def __init__(self):
         self.data = {}
-        self.lock = threading.Lock()
-
-    def update(self, ip, latency, packet_loss):
+        self.lock = threading.RLock()  # Usar RLock para permitir anidamiento seguro
+        self.max_samples = 100  # Número máximo de muestras a mantener por IP
+        
+    def _initialize_ip_data(self, ip):
+        """Inicializa la estructura de datos para una IP si no existe."""
         with self.lock:
-            # Verificar si la IP es válida antes de almacenar datos
-            if not is_valid_ip(ip):
-                print(f"IP inválida: {ip}")
-                return
+            if ip not in self.data or not isinstance(self.data[ip], dict):
+                self.data[ip] = {
+                    'latencies': [],
+                    'loss': 100.0,
+                    'last_update': None,
+                    'stats': {
+                        'total_pings': 0,
+                        'successful_pings': 0,
+                        'failed_pings': 0,
+                        'min_latency': None,
+                        'max_latency': None,
+                        'avg_latency': None,
+                        'loss_percentage': 0.0
+                    }
+                }
+            # Asegurarse de que todos los campos necesarios existen
+            if 'stats' not in self.data[ip]:
+                self.data[ip]['stats'] = {}
+            
+            # Inicializar todos los campos necesarios
+            stats = self.data[ip]['stats']
+            stats.setdefault('total_pings', 0)
+            stats.setdefault('successful_pings', 0)
+            stats.setdefault('failed_pings', 0)
+            stats.setdefault('min_latency', None)
+            stats.setdefault('max_latency', None)
+            stats.setdefault('avg_latency', None)
+            stats.setdefault('loss_percentage', 0.0)
+            
+            self.data[ip].setdefault('latencies', [])
+            self.data[ip].setdefault('loss', 100.0)
+            self.data[ip].setdefault('last_update', None)
+
+    def _get_or_create_ip_data(self, ip):
+        """Obtiene los datos de una IP, inicializándolos si es necesario."""
+        if ip not in self.data:
+            self._initialize_ip_data(ip)
+        return self.data[ip]
+        
+    def update(self, ip, latency, packet_loss):
+        """Actualiza los datos de ping para una IP específica."""
+        if not is_valid_ip(ip):
+            print(f"[PingCache] IP inválida: {ip}")
+            return False
+            
+        with self.lock:
+            try:
+                # Asegurarse de que los datos estén inicializados
+                self._initialize_ip_data(ip)
+                ip_data = self.data[ip]
+                stats = ip_data['stats']
                 
-            if ip not in self.data:
-                self.data[ip] = {'latencies': [], 'loss': 0}
-            self.data[ip]['latencies'].append(latency)
-            self.data[ip]['loss'] = packet_loss
-            # Mantener solo los últimos 100 valores
-            if len(self.data[ip]['latencies']) > 100:
-                self.data[ip]['latencies'] = self.data[ip]['latencies'][-100:]
+                # Inicializar contadores si no existen
+                if 'successful_pings' not in stats:
+                    stats['successful_pings'] = 0
+                if 'failed_pings' not in stats:
+                    stats['failed_pings'] = 0
+                if 'total_pings' not in stats:
+                    stats['total_pings'] = 0
+                
+                # Determinar si el ping fue exitoso o no
+                is_success = latency is not None and latency > 0
+                
+                # Actualizar contadores basados en si el ping fue exitoso o no
+                if is_success:  # Ping exitoso
+                    # Añadir latencia a la lista
+                    ip_data['latencies'].append(latency)
+                    
+                    # Actualizar estadísticas de latencia
+                    if stats['min_latency'] is None or latency < stats['min_latency']:
+                        stats['min_latency'] = latency
+                    if stats['max_latency'] is None or latency > stats['max_latency']:
+                        stats['max_latency'] = latency
+                        
+                    # Calcular promedio de latencia
+                    if ip_data['latencies']:
+                        stats['avg_latency'] = sum(ip_data['latencies']) / len(ip_data['latencies'])
+                
+                # Actualizar contadores de éxito/fracaso
+                if is_success:
+                    stats['successful_pings'] += 1
+                else:
+                    stats['failed_pings'] += 1
+                
+                # Asegurarse de que los contadores no sean negativos
+                stats['successful_pings'] = max(0, stats['successful_pings'])
+                stats['failed_pings'] = max(0, stats['failed_pings'])
+                
+                # Actualizar contador total de pings (suma de exitosos y fallidos)
+                stats['total_pings'] = stats['successful_pings'] + stats['failed_pings']
+                
+                # Calcular porcentaje de pérdida
+                if stats['total_pings'] > 0:
+                    loss_percentage = (stats['failed_pings'] / stats['total_pings']) * 100
+                    ip_data['loss'] = min(100.0, max(0.0, loss_percentage))
+                    stats['loss_percentage'] = ip_data['loss']
+                else:
+                    ip_data['loss'] = 100.0
+                    stats['loss_percentage'] = 100.0
+                
+                # Actualizar timestamp
+                ip_data['last_update'] = datetime.now()
+                
+                # Limitar el tamaño de la lista de latencias
+                if len(ip_data['latencies']) > self.max_samples:
+                    ip_data['latencies'] = ip_data['latencies'][-self.max_samples:]
+                
+                # Debug: Mostrar estado actual de los contadores
+                print(f"[PingCache] Update - IP: {ip}, Éxitos: {stats['successful_pings']}, Fallos: {stats['failed_pings']}, Total: {stats['total_pings']}, Pérdida: {ip_data['loss']:.2f}%")
+                
+                return True
+                
+            except Exception as e:
+                print(f"[PingCache] Error al actualizar datos para {ip}: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                # En caso de error, intentar reinicializar los datos
+                try:
+                    self._initialize_ip_data(ip)
+                except Exception as e2:
+                    print(f"[PingCache] Error al reinicializar datos: {str(e2)}")
+                return False
 
     def get_data(self, ip):
+        """Obtiene los datos de ping para una IP específica."""
+        if not is_valid_ip(ip):
+            print(f"[PingCache] Intento de obtener datos con IP inválida: {ip}")
+            return {
+                'latencies': [],
+                'loss': 100,
+                'valid': False,
+                'error': 'IP inválida',
+                'stats': {
+                    'total_pings': 0,
+                    'successful_pings': 0,
+                    'failed_pings': 0,
+                    'min_latency': None,
+                    'max_latency': None,
+                    'avg_latency': None
+                }
+            }
+            
         with self.lock:
-            # Verificar si la IP es válida antes de devolver datos
-            if not is_valid_ip(ip):
-                return {'latencies': [], 'loss': 100}
+            try:
+                # Asegurarse de que los datos estén inicializados
+                if ip not in self.data or 'stats' not in self.data.get(ip, {}):
+                    return {
+                        'latencies': [],
+                        'loss': 100,
+                        'valid': False,
+                        'message': 'No hay datos disponibles para esta IP',
+                        'stats': {
+                            'total_pings': 0,
+                            'successful_pings': 0,
+                            'failed_pings': 0,
+                            'min_latency': None,
+                            'max_latency': None,
+                            'avg_latency': None
+                        }
+                    }
                 
-            return self.data.get(ip, {'latencies': [], 'loss': 0})
+                # Hacer una copia profunda para evitar problemas de concurrencia
+                import copy
+                ip_data = copy.deepcopy(self.data[ip])
+                
+                # Asegurar que los campos requeridos existan
+                ip_data.setdefault('latencies', [])
+                ip_data.setdefault('loss', 100)
+                ip_data.setdefault('valid', True)
+                ip_data.setdefault('stats', {})
+                
+                # Inicializar estadísticas si no existen
+                stats = ip_data['stats']
+                stats.setdefault('total_pings', 0)
+                stats.setdefault('successful_pings', 0)
+                stats.setdefault('failed_pings', 0)
+                
+                # Calcular estadísticas de latencia si hay datos
+                if ip_data['latencies']:
+                    stats['min_latency'] = min(ip_data['latencies'])
+                    stats['max_latency'] = max(ip_data['latencies'])
+                    stats['avg_latency'] = sum(ip_data['latencies']) / len(ip_data['latencies'])
+                else:
+                    stats['min_latency'] = None
+                    stats['max_latency'] = None
+                    stats['avg_latency'] = None
+                
+                # Preparar el resultado final
+                result = {
+                    'latencies': ip_data['latencies'].copy(),
+                    'loss': ip_data['loss'],
+                    'last_update': ip_data.get('last_update'),
+                    'valid': ip_data['valid'],
+                    'stats': stats.copy()
+                }
+                
+                return result
+                
+            except Exception as e:
+                print(f"[PingCache] Error al obtener datos para {ip}: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                return {
+                    'latencies': [],
+                    'loss': 100,
+                    'valid': False,
+                    'error': f'Error al obtener datos: {str(e)}',
+                    'stats': {
+                        'total_pings': 0,
+                        'successful_pings': 0,
+                        'failed_pings': 0,
+                        'min_latency': None,
+                        'max_latency': None,
+                        'avg_latency': None
+                    }
+                }
 
 ping_cache = PingCache()
 
@@ -1072,39 +1403,214 @@ def delete_ticket(ticket_id):
             'message': f'Error al eliminar ticket: {str(e)}'
         }), 500
 
-def ping_server(ip, result_queue, timeout=5):
-    """Realiza ping a una IP con un timeout específico."""
+def ping_server(ip, result_queue, timeout=10):
+    """
+    Realiza ping a una IP con un timeout específico.
+    Devuelve una tupla con (éxito, resultado)
+    """
     try:
-        # Usar subprocess para realizar ping con timeout
-        output = subprocess.check_output(
-            ['ping', '-c', '4', ip], 
-            stderr=subprocess.STDOUT, 
-            universal_newlines=True,
-            timeout=timeout
-        )
-        result_queue.put(output)
-    except subprocess.CalledProcessError as e:
-        result_queue.put(f"Error de ping: {e.output}")
-    except subprocess.TimeoutExpired:
-        result_queue.put(f"Timeout al hacer ping a {ip}")
+        # Verificar si la IP es válida primero
+        if not is_valid_ip(ip):
+            result_queue.put((False, {
+                "message": f"IP inválida: {ip}",
+                "latency": None,
+                "output": ""
+            }))
+            return
+            
+        # Determinar el comando ping según el sistema operativo
+        import platform
+        system = platform.system().lower()
+        
+        if system == 'windows':
+            # Windows usa -n para el conteo y -w para el timeout en milisegundos
+            cmd = ['ping', '-n', '1', '-w', '5000', ip]
+        else:
+            # Linux/Unix usa -c para el conteo y -W para el timeout en segundos
+            cmd = ['ping', '-c', '1', '-W', '5', ip]
+            
+            # Verificar si el sistema soporta -n (sin resolución DNS)
+            try:
+                # Primero probar con -n
+                test_cmd = ['ping', '-c', '1', '-n', 'google.com']
+                subprocess.run(test_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=2)
+                cmd.insert(3, '-n')  # Añadir -n si es compatible
+            except:
+                pass  # Continuar sin -n si no es compatible
+        
+        print(f"Ejecutando: {' '.join(cmd)}")
+        
+        try:
+            output = subprocess.check_output(
+                cmd,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                timeout=timeout
+            )
+            
+            # Verificar si el ping fue exitoso
+            if 'time=' in output or 'tiempo=' in output:
+                # Extraer el tiempo de respuesta (manejar diferentes formatos de salida)
+                time_str = None
+                
+                # Formato 1: time=15.2 ms
+                if 'time=' in output:
+                    time_part = output.split('time=')[1].split()[0]
+                    time_str = time_part if time_part.replace('.', '').isdigit() else None
+                
+                # Formato 2: tiempo=15.2 ms
+                elif 'tiempo=' in output:
+                    time_part = output.split('tiempo=')[1].split()[0]
+                    time_str = time_part if time_part.replace('.', '').isdigit() else None
+                
+                if time_str:
+                    try:
+                        latency = float(time_str)
+                        result_queue.put((True, {
+                            "message": f"Respuesta desde {ip}: {latency}ms",
+                            "latency": latency,
+                            "output": output
+                        }))
+                        return
+                    except (ValueError, IndexError) as e:
+                        pass
+                
+                # Si llegamos aquí, intentemos extraer la latencia con una expresión regular
+                import re
+                time_match = re.search(r'time[=<]([\d.]+)\s*ms', output)
+                if time_match:
+                    try:
+                        latency = float(time_match.group(1))
+                        result_queue.put((True, {
+                            "message": f"Respuesta desde {ip}: {latency}ms",
+                            "latency": latency,
+                            "output": output
+                        }))
+                        return
+                    except (ValueError, IndexError) as e:
+                        pass
+            
+            # Si no se pudo extraer la latencia pero el ping fue exitoso
+            if '1 received' in output or '1 recibidos' in output:
+                result_queue.put((True, {
+                    "message": f"Respuesta desde {ip} (tiempo no disponible)",
+                    "latency": 0,
+                    "output": output
+                }))
+            else:
+                result_queue.put((False, {
+                    "message": f"No se pudo determinar la latencia para {ip}",
+                    "latency": None,
+                    "output": output
+                }))
+                
+        except subprocess.CalledProcessError as e:
+            error_msg = f"Error en el comando ping (código {e.returncode})"
+            print(f"{error_msg}: {e.output}")
+            result_queue.put((False, {
+                "message": error_msg,
+                "latency": None,
+                "output": e.output
+            }))
+            
+        except subprocess.TimeoutExpired:
+            error_msg = f"Timeout al hacer ping a {ip} (tiempo de espera: {timeout}s)"
+            print(error_msg)
+            result_queue.put((False, {
+                "message": error_msg,
+                "latency": None,
+                "output": ""
+            }))
+            
+    except Exception as e:
+        error_msg = f"Error inesperado al hacer ping a {ip}: {str(e)}"
+        print(error_msg)
+        result_queue.put((False, {
+            "message": error_msg,
+            "latency": None,
+            "output": ""
+        }))
 
 @app.route('/ping_server', methods=['POST'])
 def ping_server_route():
     """Ruta para realizar ping a un servidor."""
-    ip = request.form.get('ip')
-    if not ip:
-        return jsonify({"error": "IP no proporcionada"}), 400
-    
-    result_queue = queue.Queue()
-    ping_thread = threading.Thread(target=ping_server, args=(ip, result_queue))
-    ping_thread.start()
-    ping_thread.join(timeout=10)  # Esperar máximo 10 segundos
-    
     try:
-        result = result_queue.get_nowait()
-        return jsonify({"result": result})
-    except queue.Empty:
-        return jsonify({"error": "No se pudo obtener resultado de ping"}), 500
+        ip = request.form.get('ip')
+        print(f"Solicitud de ping a IP: {ip}")
+        
+        if not ip:
+            return jsonify({"status": "error", "message": "IP no proporcionada"}), 400
+        
+        # Verificar si la IP es válida
+        if not is_valid_ip(ip):
+            return jsonify({"status": "error", "message": f"IP inválida: {ip}"}), 400
+        
+        result_queue = queue.Queue()
+        
+        # Iniciar el ping en un hilo separado
+        ping_thread = threading.Thread(
+            target=ping_server, 
+            args=(ip, result_queue, 15)  # 15 segundos de timeout
+        )
+        ping_thread.daemon = True
+        ping_thread.start()
+        
+        # Esperar a que termine el ping con un timeout
+        ping_thread.join(timeout=20)  # Dar un poco más de tiempo que el timeout del ping
+        
+        try:
+            # Obtener el resultado de la cola
+            success, result = result_queue.get_nowait()
+            
+            # Preparar la respuesta base
+            response = {
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            if success:
+                # Si el resultado es un diccionario (nuevo formato)
+                if isinstance(result, dict):
+                    # Asegurarse de que la latencia no sea negativa
+                    latency = max(0, float(result.get("latency", 0)))
+                    response.update({
+                        "status": "success",
+                        "message": result.get("message", "Ping exitoso"),
+                        "latency": latency,
+                        "output": result.get("output", "")
+                    })
+                else:
+                    # Mantener compatibilidad con formato antiguo
+                    response.update({
+                        "status": "success",
+                        "message": str(result),
+                        "latency": 0,
+                        "output": str(result)
+                    })
+            else:
+                response.update({
+                    "status": "error",
+                    "message": str(result),
+                    "latency": None,
+                    "output": str(result)
+                })
+            
+            return jsonify(response)
+                
+        except queue.Empty:
+            return jsonify({
+                "status": "error",
+                "message": f"Timeout al esperar respuesta del ping para {ip}",
+                "timestamp": datetime.now().isoformat()
+            }), 504  # Gateway Timeout
+            
+    except Exception as e:
+        error_msg = f"Error inesperado al procesar la solicitud de ping: {str(e)}"
+        print(error_msg)
+        return jsonify({
+            "status": "error",
+            "message": error_msg,
+            "timestamp": datetime.now().isoformat()
+        }), 500
 
 @app.route('/add_server', methods=['POST'])
 def add_server():
@@ -1143,86 +1649,668 @@ def add_server():
     return redirect(url_for('server_status'))  # Redirigir a la página de estado de servidores
 
 # Función para realizar ping continuo
-def continuous_ping(ip, result_queue):
-    try:
-        # Verificar si la IP es válida
-        if not is_valid_ip(ip):
-            print(f"IP inválida: {ip}")
-            result_queue.put({'latency': -1, 'packet_loss': 100})
-            return
+def continuous_ping(ip, result_queue, stop_event):
+    """
+    Función mejorada para hacer ping continuo a una IP.
+    Versión con diagnóstico detallado para identificar problemas de conexión.
+    
+    Args:
+        ip (str): Dirección IP a monitorear
+        result_queue (queue.Queue): Cola para enviar resultados
+        stop_event (threading.Event): Evento para detener el monitoreo
+    """
+    def log(msg, level='INFO'):
+        timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+        print(f"[{timestamp}] [{level}] [IP:{ip}] {msg}")
+    
+    if not is_valid_ip(ip):
+        error_msg = f"IP inválida: {ip}"
+        log(error_msg, 'ERROR')
+        result_queue.put({'error': error_msg, 'ip': ip, 'status': 'error'})
+        return
+    
+    log("Iniciando monitoreo de ping mejorado", 'INFO')
+    
+    # Inicializar datos locales
+    latencies = []
+    total_pings = 0
+    successful_pings = 0
+    consecutive_errors = 0
+    MAX_CONSECUTIVE_ERRORS = 3
+    
+    # Configuración de ping - valores más conservadores
+    PING_COUNT = 3  # 3 intentos por ping
+    PING_TIMEOUT = 2  # 2 segundos de timeout
+    PING_INTERVAL = 0.2  # 200ms entre pings
+    
+    log(f"Configuración: count={PING_COUNT}, timeout={PING_TIMEOUT}s, interval={PING_INTERVAL}s", 'DEBUG')
+    
+    # Función para enviar un solo ping
+    def send_single_ping():
+        try:
+            cmd = ['ping', '-c', '1', '-W', str(PING_TIMEOUT), ip]
+            log(f"Ejecutando: {' '.join(cmd)}", 'DEBUG')
             
-        while True:
-            try:
-                # Realizar ping
-                ping = subprocess.Popen(
-                    ['ping', '-c', '1', '-W', '5', ip],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE
-                )
-                out, error = ping.communicate()
+            start_time = time.time()
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                timeout=PING_TIMEOUT + 1
+            )
+            
+            # Combinar stdout y stderr para un mejor análisis
+            output = result.stdout + "\n" + result.stderr
+            elapsed_ms = (time.time() - start_time) * 1000
+            
+            # Verificar si el ping fue exitoso (0) o no
+            if result.returncode == 0:
+                # Verificar si realmente recibimos respuesta (para diferentes idiomas)
+                if not ('1 received' in output or '1 recibidos' in output or '1 packets received' in output):
+                    return {
+                        'success': False,
+                        'error': 'No se recibió respuesta de ping',
+                        'output': output,
+                        'latency': -1
+                    }
                 
-                if ping.returncode == 0:
-                    # Parsear la salida
-                    output = out.decode()
-                    latency = float(output.split('time=')[1].split(' ')[0])
-                    packet_loss = 0
+                # Intentar extraer el tiempo usando diferentes patrones
+                time_patterns = [
+                    r'time=([\d.]+)\s*ms',    # Formato común
+                    r'tiempo=([\d.]+)\s*ms',   # Formato en español
+                    r'time:([\d.]+)\s*ms',     # Otro formato común
+                    r'tiempo:([\d.]+)\s*ms',   # Otro formato en español
+                    r'time[=:]([\d.]+)\s*ms'   # Patrón genérico
+                ]
+                
+                for pattern in time_patterns:
+                    match = re.search(pattern, output)
+                    if match:
+                        latency = float(match.group(1))
+                        log(f"Ping exitoso: {latency:.2f}ms", 'DEBUG')
+                        return {
+                            'success': True,
+                            'latency': latency,
+                            'output': output
+                        }
+                
+                # Si no se pudo extraer el tiempo pero el ping fue exitoso
+                log(f"Ping exitoso pero no se pudo extraer tiempo (usando tiempo medido): {elapsed_ms:.2f}ms", 'WARNING')
+                return {
+                    'success': True,
+                    'latency': elapsed_ms,
+                    'output': output
+                }
+            else:
+                # Manejar diferentes tipos de errores
+                if '100% packet loss' in output or '100% de pérdida' in output:
+                    error_msg = "Pérdida total de paquetes"
+                elif 'Network is unreachable' in output or 'Red es inalcanzable' in output:
+                    error_msg = "Red inalcanzable"
+                elif 'Name or service not known' in output or 'Nombre o servicio no conocido' in output:
+                    error_msg = "Nombre de host desconocido"
                 else:
-                    latency = -1
-                    packet_loss = 100
+                    error_msg = f"Error (código: {result.returncode})"
                 
-                # Actualizar la caché solo si la IP es válida
-                ping_cache.update(ip, latency, packet_loss)
-                result_queue.put({'latency': latency, 'loss': packet_loss})
+                log(f"Error en ping: {error_msg}", 'WARNING')
+                return {
+                    'success': False,
+                    'error': error_msg,
+                    'output': output,
+                    'latency': -1
+                }
                 
-            except Exception as e:
-                print(f"Error en ping: {e}")
-                result_queue.put({'latency': -1, 'loss': 100})
-                
-            time.sleep(1)
+        except subprocess.TimeoutExpired:
+            error_msg = "Tiempo de espera agotado"
+            log(error_msg, 'WARNING')
+            return {
+                'success': False,
+                'error': error_msg,
+                'latency': -1
+            }
+        except Exception as e:
+            error_msg = f"Error inesperado: {str(e)}"
+            log(error_msg, 'ERROR')
+            return {
+                'success': False,
+                'error': error_msg,
+                'latency': -1
+            }
+            error_msg = result.stderr if result.stderr else result.stdout
+            log(f"Error en ping: {error_msg.strip()}", 'WARNING')
+            return {'success': False, 'error': error_msg.strip()}
             
+        except subprocess.TimeoutExpired:
+            log("Timeout al ejecutar ping", 'WARNING')
+            return {'success': False, 'error': 'timeout'}
+        except Exception as e:
+            log(f"Error inesperado al ejecutar ping: {str(e)}", 'ERROR')
+            return {'success': False, 'error': str(e)}
+    
+    start_time = time.time()
+    
+    try:
+        while not stop_event.is_set():
+            iteration_start = time.time()
+            successful_attempts = 0
+            attempt_latencies = []
+            
+            # Verificar si debemos detenernos
+            if stop_event.is_set():
+                log("Señal de detección recibida, finalizando monitoreo...", 'INFO')
+                break
+            
+            # Realizar múltiples intentos de ping
+            last_error = None
+            for attempt in range(PING_COUNT):
+                try:
+                    result = send_single_ping()
+                    
+                    if result.get('success', False):
+                        successful_attempts += 1
+                        attempt_latencies.append(result['latency'])
+                    else:
+                        # Guardar el último error para mostrarlo si todos los intentos fallan
+                        last_error = result.get('error', 'Error desconocido')
+                    
+                    # Pequeña pausa entre intentos
+                    if attempt < PING_COUNT - 1:
+                        time.sleep(0.1)
+                        
+                except Exception as e:
+                    error_msg = str(e)
+                    log(f"Error en intento de ping: {error_msg}", 'WARNING')
+                    last_error = error_msg
+                    continue
+            
+            total_pings += 1
+            
+            # Inicializar variables
+            latency = 0
+            status = 'unknown'
+            
+            # Procesar resultados de los intentos
+            if successful_attempts > 0:
+                # Calcular latencia promedio de los intentos exitosos
+                avg_latency = sum(attempt_latencies) / len(attempt_latencies)
+                latency = min(avg_latency, 1000)  # Limitar a 1000ms
+                successful_pings += 1
+                consecutive_errors = 0
+                status = 'success'
+                
+                # Agregar a las latencias recientes (máximo 60 muestras)
+                latencies.append(latency)
+                if len(latencies) > 60:
+                    latencies.pop(0)
+                
+                log(f"Ping exitoso: {latency:.2f}ms (de {successful_attempts}/{PING_COUNT} intentos)", 'DEBUG')
+            else:
+                # Todos los intentos fallaron
+                latency = -1
+                consecutive_errors += 1
+                status = 'error'
+                error_msg = last_error if last_error else 'Error desconocido en todos los intentos'
+                log(f"Fallo en ping: {error_msg}", 'WARNING')
+                
+                # Si hay demasiados errores consecutivos, reiniciar contadores
+                if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                    log(f"Demasiados errores consecutivos ({consecutive_errors}), reiniciando contadores...", 'WARNING')
+                    successful_pings = 0
+                    total_pings = 0
+                    latencies = []
+                    consecutive_errors = 0
+            
+            # Calcular la pérdida de paquetes
+            failed_pings = total_pings - successful_pings
+            packet_loss = (failed_pings / total_pings * 100) if total_pings > 0 else 0.0
+            
+            # Asegurarse de que los contadores no sean negativos
+            successful_pings = max(0, successful_pings)
+            failed_pings = max(0, failed_pings)
+            total_pings = max(1, successful_pings + failed_pings)  # Asegurar que total_pings sea al menos 1
+            
+            # Asegurar que la pérdida de paquetes esté entre 0 y 100
+            packet_loss = max(0, min(100, packet_loss))
+            
+            # Preparar datos para la caché
+            result_data = {
+                'ip': ip,
+                'latency': latency if latency > 0 else 0,  # Usar 0 como valor de error
+                'current_latency': latency if latency > 0 else 0,  # Usar 0 como valor de error
+                'packet_loss': min(100, max(0, packet_loss)),  # Asegurar entre 0 y 100
+                'successful_pings': successful_pings,
+                'failed_pings': consecutive_errors,  # Usar el contador de errores consecutivos
+                'total_pings': total_pings,
+                'status': status,
+                'timestamp': time.time(),
+                'latencies': latencies.copy(),
+                'stats': {
+                    'min': min(latencies) if latencies else 0,
+                    'max': max(latencies) if latencies else 0,
+                    'avg': sum(latencies) / len(latencies) if latencies else 0,
+                    'loss': max(0, min(100, packet_loss))  # Asegurar entre 0 y 100
+                },
+                'success': successful_attempts > 0,
+                'consecutive_errors': consecutive_errors,
+                'last_update': datetime.now().isoformat()
+            }
+            
+            # Agregar mensaje de error si corresponde
+            if status == 'error':
+                result_data['error'] = error_msg
+            
+            # Actualizar la caché
+            with ping_cache.lock:
+                if ip not in ping_cache.data:
+                    ping_cache.data[ip] = {}
+                ping_cache.data[ip] = result_data
+            
+            # Enviar a la cola de resultados
+            try:
+                result_queue.put(result_data, timeout=1)
+            except queue.Full:
+                log("Cola de resultados llena, descartando datos", 'WARNING')
+            
+            # Calcular tiempo de espera hasta la próxima iteración
+            elapsed = time.time() - iteration_start
+            sleep_time = max(0, PING_INTERVAL - elapsed)
+            
+            # Usar wait con timeout para poder detectar la señal de stop
+            if sleep_time > 0:
+                stop_event.wait(timeout=sleep_time)
+                if stop_event.is_set():
+                    log("Señal de detección recibida durante la espera, finalizando...", 'INFO')
+                    break
+                
+            # Esperar 1 segundo entre pings
+            elapsed_since_start = time.time() - iteration_start
+            if elapsed_since_start < 1.0:
+                remaining = 1.0 - elapsed_since_start
+                stop_event.wait(timeout=remaining)
+                if stop_event.is_set():
+                    log("Señal de detección recibida durante la espera, finalizando...", 'INFO')
+                    break
+                
+    except subprocess.TimeoutExpired:
+        # Timeout del comando
+        total_pings += 1
+        current_loss = 100 - ((successful_pings / total_pings) * 100) if total_pings > 0 else 100
+        
+        result_data = {
+            'latency': -1,
+            'status': 'timeout',
+            'timestamp': datetime.now().isoformat(),
+            'packet_loss': current_loss,
+            'total_pings': total_pings,
+            'successful_pings': successful_pings,
+            'stats': {
+                'min': min(latencies) if latencies else 0,
+                'max': max(latencies) if latencies else 0,
+                'avg': sum(latencies)/len(latencies) if latencies else 0,
+                'packet_loss': current_loss
+            }
+        }
+        
+        # Actualizar la caché
+        with ping_cache.lock:
+            if ip not in ping_cache.data:
+                ping_cache.data[ip] = {}
+            ping_cache.data[ip] = result_data
+        
+        result_queue.put(result_data)
+        
+        # Pequeña pausa antes de continuar
+        stop_event.wait(timeout=1.0)
+        
     except Exception as e:
-        print(f"Error en ping continuo: {e}")
-        result_queue.put({'error': str(e)})
+        if not stop_event.is_set():  # Solo registrar errores si no estamos deteniendo el monitoreo
+            print(f"[continuous_ping] Error inesperado: {e}")
+            result_queue.put({
+                'error': str(e),
+                'status': 'error',
+                'ip': ip,
+                'timestamp': datetime.now().isoformat(),
+                'packet_loss': 100
+            })
+    finally:
+        # Limpiar recursos
+        log("Limpiando recursos del monitoreo...", 'DEBUG')
+        
+        # Asegurarse de que la caché esté limpia
+        with ping_cache.lock:
+            if ip in ping_cache.data:
+                del ping_cache.data[ip]
+        
+        # Limpiar referencias
+        if ip in monitoring_threads:
+            try:
+                del monitoring_threads[ip]
+            except KeyError:
+                pass
+                
+        if ip in monitoring_events:
+            try:
+                del monitoring_events[ip]
+            except KeyError:
+                pass
+                
+        log(f"Monitoreo finalizado para {ip}", 'INFO')
+        time.sleep(5)  # Esperar 5 segundos en caso de error
 
 # Ruta para iniciar el monitoreo
 @app.route('/start_monitor/<ip>', methods=['GET'])
 def start_monitor(ip):
+    def log(msg, level='INFO'):
+        timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+        print(f"[{timestamp}] [{level}] [start_monitor] {msg}")
+    
     try:
+        log(f"Iniciando monitoreo para IP: {ip}")
+        
         # Verificar si la IP es válida
         if not is_valid_ip(ip):
-            return jsonify({"error": "IP inválida"}), 400
+            error_msg = f"IP inválida: {ip}"
+            log(error_msg, 'ERROR')
+            return jsonify({"error": error_msg}), 400
+        
+        # Inicializar la caché si no existe
+        if not hasattr(ping_cache, 'data'):
+            log("Inicializando caché de ping", 'DEBUG')
+            ping_cache.data = {}
+        
+        # Limpiar cualquier dato anterior para esta IP
+        with ping_cache.lock:
+            if ip in ping_cache.data:
+                log(f"Limpiando caché anterior para IP: {ip}", 'DEBUG')
+                del ping_cache.data[ip]
             
-        # Iniciar el monitoreo
-        threading.Thread(target=continuous_ping, args=(ip, queue.Queue())).start()
-        return jsonify({"status": "ok"})
+            # Inicializar los datos para esta IP
+            ping_cache._initialize_ip_data(ip)
+            log(f"Datos inicializados para IP: {ip}", 'DEBUG')
+        
+        # Crear una cola para los resultados
+        result_queue = queue.Queue()
+        
+        # Crear un evento para detener el monitoreo
+        stop_event = threading.Event()
+        monitoring_events[ip] = stop_event
+        
+        # Iniciar el monitoreo en un hilo separado
+        monitor_thread = threading.Thread(
+            target=continuous_ping, 
+            args=(ip, result_queue, stop_event),
+            daemon=True,  # El hilo se cerrará cuando el programa principal termine
+            name=f"PingMonitor-{ip}"
+        )
+        
+        # Registrar el hilo
+        monitoring_threads[ip] = monitor_thread
+        monitor_thread.start()
+        log(f"Hilo de monitoreo iniciado: {monitor_thread.name}", 'DEBUG')
+        
+        # Esperar el primer resultado para asegurarnos de que el ping está funcionando
+        try:
+            log("Esperando primer resultado...", 'DEBUG')
+            first_result = result_queue.get(timeout=10)  # Esperar máximo 10 segundos
+            log(f"Primer resultado recibido: {first_result}", 'DEBUG')
+            
+            # Inicializar la caché con los datos iniciales
+            with ping_cache.lock:
+                if ip not in ping_cache.data:
+                    ping_cache._initialize_ip_data(ip)
+                
+                # Actualizar con los datos del primer resultado
+                if 'latency' in first_result:
+                    latency = first_result['latency'] if first_result['latency'] > 0 else -1
+                    packet_loss = first_result.get('packet_loss', 100)
+                    ping_cache.update(ip, latency, packet_loss)
+                    log(f"Caché actualizada con latencia: {latency}ms, pérdida: {packet_loss}%", 'DEBUG')
+            
+            # Si hay un error, lo registramos pero no detenemos el monitoreo
+            if 'error' in first_result or first_result.get('latency', -1) <= 0:
+                error_msg = first_result.get('error', 'No se pudo conectar al servidor')
+                log(f"Advertencia en el primer ping: {error_msg}", 'WARNING')
+                log("Continuando con el monitoreo...", 'INFO')
+                
+        except queue.Empty:
+            error_msg = f"No se recibió respuesta del ping para {ip} en 10 segundos"
+            log(error_msg, 'ERROR')
+            return jsonify({
+                "status": "error",
+                "message": error_msg,
+                "timestamp": datetime.now().isoformat()
+            }), 504
+        
+        log("Monitoreo iniciado exitosamente", 'INFO')
+        return jsonify({
+            "status": "ok",
+            "message": f"Monitoreo iniciado para {ip}",
+            "timestamp": datetime.now().isoformat()
+        })
+        
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        error_msg = f"Error al iniciar monitoreo: {str(e)}"
+        log(error_msg, 'ERROR')
+        import traceback
+        log(traceback.format_exc(), 'ERROR')
+        return jsonify({
+            "status": "error",
+            "message": error_msg,
+            "timestamp": datetime.now().isoformat()
+        }), 500
+        return jsonify({"error": error_msg}), 500
 
 @app.route('/get_ping_data/<ip>', methods=['GET'])
 def get_ping_data(ip):
+    """
+    Obtiene los datos de ping para una IP específica desde la caché.
+    Versión mejorada con cálculos más precisos.
+    """
     try:
-        # Verificar si la IP es válida
-        if not is_valid_ip(ip):
+        print(f"[get_ping_data] Solicitando datos para IP: {ip}")
+        
+        # Obtener datos de la caché
+        with ping_cache.lock:
+            ip_data = ping_cache.data.get(ip, {})
+        
+        print(f"[get_ping_data] Datos obtenidos de la caché: {ip_data}")
+        
+        # Si no hay datos, devolver respuesta vacía
+        if not ip_data:
+            print(f"[get_ping_data] No hay datos para IP: {ip}")
             return jsonify({
+                'success': False,
+                'error': 'No hay datos disponibles',
+                'valid': False,
                 'latencies': [],
                 'loss': 100,
-                'valid_ip': False
+                'current_latency': -1,
+                'status': 'offline',
+                'stats': {
+                    'total_pings': 0,
+                    'successful_pings': 0,
+                    'failed_pings': 0,
+                    'packet_loss': 100,
+                    'min_latency': 0,
+                    'max_latency': 0,
+                    'avg_latency': 0,
+                    'last_update': datetime.now().isoformat()
+                }
             })
+        
+        # Obtener datos básicos directamente del último resultado
+        current_latency = ip_data.get('current_latency', -1)
+        status = ip_data.get('status', 'unknown')
+        packet_loss = ip_data.get('packet_loss', 100)
+        
+        # Obtener estadísticas de latencia
+        latencies = ip_data.get('latencies', [])
+        valid_latencies = [l for l in latencies if l > 0]
+        
+        # Calcular estadísticas
+        if valid_latencies:
+            min_latency = min(valid_latencies)
+            max_latency = max(valid_latencies)
+            avg_latency = sum(valid_latencies) / len(valid_latencies)
             
-        data = ping_cache.get_data(ip)
-        current_latency = data['latencies'][-1] if data['latencies'] else 0
-        return jsonify({
-            'latencies': data['latencies'],
-            'loss': data['loss'],
-            'valid_ip': True,
-            'current_latency': current_latency
-        })
+            # Redondear valores para mejor presentación
+            min_latency = round(min_latency, 2)
+            max_latency = round(max_latency, 2)
+            avg_latency = round(avg_latency, 2)
+        else:
+            min_latency = 0
+            max_latency = 0
+            avg_latency = 0
+        
+        # Obtener contadores de pings
+        total_pings = ip_data.get('total_pings', 0)
+        successful_pings = ip_data.get('successful_pings', 0)
+        failed_pings = max(0, total_pings - successful_pings)
+        
+        # Asegurarse de que la pérdida de paquetes esté en un rango válido
+        packet_loss = max(0, min(100, packet_loss))
+        
+        # Si no hay latencias válidas, forzar la pérdida de paquetes al 100%
+        if not valid_latencies and total_pings > 0:
+            packet_loss = 100
+        else:
+            min_latency = max_latency = avg_latency = 0
+        
+        # Si nunca tuvimos éxito, forzar un valor de latencia alto
+        if not valid_latencies and status != 'success':
+            latencies = [1000] * min(total_pings, 10)  # Máximo 10 muestras de fallo
+            min_latency = max_latency = avg_latency = 1000
+        
+        # Preparar la respuesta
+        response = {
+            'success': True,
+            'ip': ip,
+            'latency': current_latency if current_latency > 0 else -1,
+            'current_latency': current_latency if current_latency > 0 else -1,
+            'status': status,
+            'latencies': latencies[-100:],  # Últimas 100 muestras
+            'loss': packet_loss,
+            'total_pings': total_pings,
+            'successful_pings': successful_pings,
+            'failed_pings': failed_pings,
+            'valid': True,
+            'timestamp': ip_data.get('timestamp', datetime.now().isoformat()),
+            'stats': {
+                'min': min_latency,
+                'max': max_latency,
+                'avg': avg_latency,
+                'packet_loss': packet_loss,
+                'total_pings': total_pings,
+                'successful_pings': successful_pings,
+                'failed_pings': failed_pings,
+                'min_latency': min_latency if min_latency > 0 else None,
+                'max_latency': max_latency if max_latency > 0 else None,
+                'avg_latency': avg_latency if avg_latency > 0 else None,
+                'last_update': ip_data.get('timestamp'),
+                'consecutive_errors': ip_data.get('stats', {}).get('consecutive_errors', 0)
+            }
+        }
+        
+        print(f"[get_ping_data] Enviando respuesta para {ip}")
+        return jsonify(response)
+        
     except Exception as e:
+        error_msg = f"Error en get_ping_data para {ip}: {str(e)}"
+        print(error_msg)
+        import traceback
+        traceback.print_exc()
         return jsonify({
+            'success': False,
+            'error': str(e),
+            'valid': False,
             'latencies': [],
             'loss': 100,
-            'valid_ip': False,
-            'error': str(e)
+            'stats': {
+                'total_pings': 0,
+                'successful_pings': 0,
+                'failed_pings': 0,
+                'packet_loss': 100,
+                'min_latency': None,
+                'max_latency': None,
+                'avg_latency': None,
+                'last_update': None
+            }
+        }), 500
+
+@app.route('/stop_monitor/<ip>', methods=['POST'])
+def stop_monitor(ip):
+    """Detiene el monitoreo para una IP específica.
+    
+    Args:
+        ip (str): Dirección IP a dejar de monitorear
+        
+    Returns:
+        JSON con el estado de la operación
+    """
+    try:
+        print(f"Deteniendo monitoreo para IP: {ip}")
+        
+        # Validar la IP
+        if not is_valid_ip(ip):
+            print(f"IP inválida: {ip}")
+            return jsonify({
+                "status": "error",
+                "message": f"IP inválida: {ip}",
+                "timestamp": datetime.now().isoformat()
+            }), 400
+        
+        message = f"Monitoreo detenido para {ip}"
+        
+        # Verificar si hay un evento de monitoreo activo
+        if ip in monitoring_events:
+            print(f"Deteniendo hilo de monitoreo para IP: {ip}")
+            try:
+                monitoring_events[ip].set()  # Señalizar al hilo que debe detenerse
+                
+                # Esperar a que el hilo termine (máximo 2 segundos)
+                if ip in monitoring_threads:
+                    monitoring_threads[ip].join(timeout=2)
+                    if monitoring_threads[ip].is_alive():
+                        print(f"Advertencia: El hilo de monitoreo para {ip} no terminó correctamente")
+                    
+                    # Limpiar referencias
+                    del monitoring_threads[ip]
+                
+                # Limpiar el evento
+                del monitoring_events[ip]
+                print(f"Hilo de monitoreo para {ip} detenido correctamente")
+            except Exception as e:
+                print(f"Error al detener el hilo de monitoreo para {ip}: {str(e)}")
+                # Continuar con la limpieza a pesar del error
+        
+        # Limpiar la caché para esta IP si existe
+        try:
+            if hasattr(ping_cache, 'data') and ip in ping_cache.data:
+                print(f"Eliminando datos de caché para IP: {ip}")
+                del ping_cache.data[ip]
+            else:
+                print(f"No se encontraron datos de monitoreo para IP: {ip}")
+                message = f"No se estaba monitoreando la IP {ip}"
+        except Exception as e:
+            print(f"Error al limpiar la caché para {ip}: {str(e)}")
+            # No es un error crítico, continuamos
+        
+        return jsonify({
+            "status": "success",
+            "message": message,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        error_msg = f"Error al detener el monitoreo para {ip}: {str(e)}"
+        print(error_msg)
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "status": "error",
+            "message": error_msg,
+            "timestamp": datetime.now().isoformat()
         }), 500
 
 if __name__ == '__main__':
