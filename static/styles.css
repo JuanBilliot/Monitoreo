@@ -423,7 +423,7 @@ body {
 .kanban-card p {
     margin: 3px 0;
     font-size: 0.85em;
-    color: var(--primary-color);
+    color: #333333; /* Color de texto más oscuro */
 }
 
 .kanban-card p strong {
