@@ -14,7 +14,7 @@
             <h2 class="section-title">Sucursales</h2>
             <div class="servers-grid">
                 {% for server in servers %}
-                <div class="server-card">
+                <div class="server-card" data-id="{{ server['id'] }}">
                     <div class="server-header">
                         <h3 class="server-title">{{ server['branch'] }} ({{ server['branch_code'] }})</h3>
                         <div class="button-group">
@@ -696,12 +696,19 @@ function updateStatsUI(monitor, data, service) {
             console.log(`[updateStatsUI] Inicializado contador de paquetes perdidos para ${serviceKey}: 0`);
         }
         
-        // Si hay fallos en esta actualización, los sumamos al contador
-        if (failedPings > 0) {
-            console.log(`[updateStatsUI] Se detectaron ${failedPings} fallos nuevos para ${serviceKey}`);
-            lostPacketsCounters[serviceKey] += failedPings;
+        // Verificar si hay un nuevo fallo en esta actualización
+        // Solo incrementamos el contador si el número de fallos ha aumentado desde la última actualización
+        const previousFailedPings = parseInt(monitor.getAttribute('data-last-failed-pings') || '0', 10);
+        const newFailedPings = Math.max(0, failedPings - previousFailedPings);
+        
+        if (newFailedPings > 0) {
+            console.log(`[updateStatsUI] Se detectaron ${newFailedPings} fallos nuevos para ${serviceKey}`);
+            lostPacketsCounters[serviceKey] = (lostPacketsCounters[serviceKey] || 0) + newFailedPings;
             console.log(`[updateStatsUI] Total acumulado de paquetes perdidos para ${serviceKey}: ${lostPacketsCounters[serviceKey]}`);
         }
+        
+        // Guardar el número actual de fallos para la próxima actualización
+        monitor.setAttribute('data-last-failed-pings', failedPings.toString());
         
         // Usar el contador acumulado
         const lostPackets = lostPacketsCounters[serviceKey];
@@ -1093,6 +1100,8 @@ function clearMonitor(chart, button, service) {
                 context.clearRect(0, 0, canvas.width, canvas.height);
             }
         }
+        // Limpiar el contador de fallos anterior
+        monitor.removeAttribute('data-last-failed-pings');
     }
     
     // Limpiar cualquier intervalo de actualización pendiente
@@ -1210,6 +1219,22 @@ window.toggleMonitoring = async function(ip, id, chart, button) {
             
             // Inicializar variables de estado
             window.isUpdating = false;
+            
+            // Inicializar contador de paquetes perdidos para este servicio
+            const serviceKey = `${id}-${service}`;
+            // Siempre reiniciamos el contador cuando se inicia el monitoreo
+            lostPacketsCounters[serviceKey] = 0;
+            console.log(`[toggleMonitoring] Contador de paquetes para ${serviceKey} inicializado a 0`);
+            
+            // Actualizar la interfaz para reflejar el contador en 0
+            if (monitor) {
+                const packetLossElement = monitor.querySelector(`.packet-loss-count[data-service="${service}"]`);
+                if (packetLossElement) {
+                    packetLossElement.textContent = '0';
+                }
+                // Asegurarse de limpiar el contador de fallos anterior
+                monitor.removeAttribute('data-last-failed-pings');
+            }
             
             // Función para actualizar los datos
             const updateData = async () => {

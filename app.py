@@ -1900,11 +1900,67 @@ def continuous_ping(ip, result_queue, stop_event):
             if status == 'error':
                 result_data['error'] = error_msg
             
-            # Actualizar la caché
+            # Actualizar la caché de manera incremental
             with ping_cache.lock:
                 if ip not in ping_cache.data:
                     ping_cache.data[ip] = {}
-                ping_cache.data[ip] = result_data
+                
+                # Obtener datos existentes o inicializar si no existen
+                existing_data = ping_cache.data[ip]
+                
+                # Actualizar solo los campos necesarios
+                existing_data.update({
+                    'ip': ip,
+                    'latency': result_data.get('latency', existing_data.get('latency', 0)),
+                    'current_latency': result_data.get('current_latency', existing_data.get('current_latency', 0)),
+                    'status': result_data.get('status', existing_data.get('status', 'unknown')),
+                    'timestamp': result_data.get('timestamp', existing_data.get('timestamp', time.time())),
+                    'error': result_data.get('error', existing_data.get('error', None)),
+                    'success': result_data.get('success', existing_data.get('success', False)),
+                    'consecutive_errors': result_data.get('consecutive_errors', existing_data.get('consecutive_errors', 0))
+                })
+                
+                # Manejar los contadores de manera incremental
+                existing_data['successful_pings'] = existing_data.get('successful_pings', 0) + (1 if result_data.get('success', False) else 0)
+                existing_data['failed_pings'] = existing_data.get('failed_pings', 0) + (0 if result_data.get('success', False) else 1)
+                existing_data['total_pings'] = existing_data.get('successful_pings', 0) + existing_data.get('failed_pings', 0)
+                
+                # Calcular la pérdida de paquetes basada en los contadores incrementales
+                if existing_data['total_pings'] > 0:
+                    existing_data['packet_loss'] = (existing_data['failed_pings'] / existing_data['total_pings']) * 100
+                else:
+                    existing_data['packet_loss'] = 0
+                
+                # Manejar las latencias
+                if 'latencies' not in existing_data:
+                    existing_data['latencies'] = []
+                
+                # Agregar la nueva latencia si es válida
+                if result_data.get('latency', 0) > 0:
+                    existing_data['latencies'].append(result_data['latency'])
+                    # Mantener un máximo de 60 muestras
+                    if len(existing_data['latencies']) > 60:
+                        existing_data['latencies'].pop(0)
+                
+                # Actualizar estadísticas
+                if 'stats' not in existing_data:
+                    existing_data['stats'] = {}
+                
+                # Calcular estadísticas de latencia
+                if existing_data['latencies']:
+                    existing_data['stats'].update({
+                        'min': min(existing_data['latencies']),
+                        'max': max(existing_data['latencies']),
+                        'avg': sum(existing_data['latencies']) / len(existing_data['latencies']),
+                        'loss': existing_data['packet_loss']
+                    })
+                else:
+                    existing_data['stats'].update({
+                        'min': 0,
+                        'max': 0,
+                        'avg': 0,
+                        'loss': existing_data['packet_loss']
+                    })
             
             # Enviar a la cola de resultados
             try:
@@ -2019,14 +2075,36 @@ def start_monitor(ip):
             log("Inicializando caché de ping", 'DEBUG')
             ping_cache.data = {}
         
-        # Limpiar cualquier dato anterior para esta IP
+        # Inicializar los datos para esta IP
         with ping_cache.lock:
+            # Limpiar cualquier dato anterior para esta IP
             if ip in ping_cache.data:
                 log(f"Limpiando caché anterior para IP: {ip}", 'DEBUG')
                 del ping_cache.data[ip]
             
-            # Inicializar los datos para esta IP
-            ping_cache._initialize_ip_data(ip)
+            # Inicializar los datos con valores por defecto
+            ping_cache.data[ip] = {
+                'ip': ip,
+                'latency': 0,
+                'current_latency': 0,
+                'packet_loss': 0,
+                'successful_pings': 0,
+                'failed_pings': 0,
+                'total_pings': 0,
+                'status': 'unknown',
+                'timestamp': time.time(),
+                'latencies': [],
+                'stats': {
+                    'min': 0,
+                    'max': 0,
+                    'avg': 0,
+                    'loss': 0,
+                    'packet_loss': 0
+                },
+                'success': False,
+                'consecutive_errors': 0,
+                'last_update': datetime.now().isoformat()
+            }
             log(f"Datos inicializados para IP: {ip}", 'DEBUG')
         
         # Crear una cola para los resultados
@@ -2284,16 +2362,50 @@ def stop_monitor(ip):
                 print(f"Error al detener el hilo de monitoreo para {ip}: {str(e)}")
                 # Continuar con la limpieza a pesar del error
         
-        # Limpiar la caché para esta IP si existe
+        # Limpiar la caché y todos los recursos asociados a esta IP
         try:
-            if hasattr(ping_cache, 'data') and ip in ping_cache.data:
-                print(f"Eliminando datos de caché para IP: {ip}")
-                del ping_cache.data[ip]
-            else:
-                print(f"No se encontraron datos de monitoreo para IP: {ip}")
-                message = f"No se estaba monitoreando la IP {ip}"
+            with ping_cache.lock:
+                if hasattr(ping_cache, 'data') and ip in ping_cache.data:
+                    print(f"Eliminando datos de caché para IP: {ip}")
+                    # Guardar estadísticas finales antes de eliminar
+                    final_stats = {
+                        'total_pings': ping_cache.data[ip].get('total_pings', 0),
+                        'successful_pings': ping_cache.data[ip].get('successful_pings', 0),
+                        'failed_pings': ping_cache.data[ip].get('failed_pings', 0),
+                        'packet_loss': ping_cache.data[ip].get('packet_loss', 0)
+                    }
+                    print(f"Estadísticas finales para {ip}: {final_stats}")
+                    
+                    # Eliminar los datos de la caché
+                    del ping_cache.data[ip]
+                    print(f"Datos de caché para IP {ip} eliminados correctamente")
+                else:
+                    print(f"No se encontraron datos de monitoreo para IP: {ip}")
+                    message = f"No se estaba monitoreando la IP {ip}"
+                    
+                # Asegurarse de limpiar cualquier referencia restante
+                if ip in monitoring_threads:
+                    try:
+                        if monitoring_threads[ip].is_alive():
+                            monitoring_threads[ip].join(timeout=1)
+                        del monitoring_threads[ip]
+                        print(f"Hilo de monitoreo para {ip} eliminado")
+                    except Exception as e:
+                        print(f"Error al eliminar el hilo de monitoreo para {ip}: {str(e)}")
+                
+                if ip in monitoring_events:
+                    try:
+                        monitoring_events[ip].set()
+                        del monitoring_events[ip]
+                        print(f"Evento de monitoreo para {ip} eliminado")
+                    except Exception as e:
+                        print(f"Error al eliminar el evento de monitoreo para {ip}: {str(e)}")
+                        
         except Exception as e:
-            print(f"Error al limpiar la caché para {ip}: {str(e)}")
+            error_msg = f"Error al limpiar los recursos para {ip}: {str(e)}"
+            print(error_msg)
+            import traceback
+            traceback.print_exc()
             # No es un error crítico, continuamos
         
         return jsonify({
