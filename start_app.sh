@@ -12,16 +12,16 @@ if ! command -v python3 &> /dev/null; then
 fi
 
 # Crear entorno virtual si no existe
-if [ ! -d "venv" ]; then
+if [ ! -d ".venv" ]; then
     echo "🔧 Creando entorno virtual..."
-    python3 -m venv venv || {
+    python3 -m venv .venv || {
         echo "❌ Error al crear el entorno virtual"
         read -p "Presiona Enter para salir..."
         exit 1
     }
     
     # Activar y actualizar pip
-    source venv/bin/activate
+    source .venv/bin/activate
     echo "🔄 Actualizando pip..."
     pip install --upgrade pip || {
         echo "❌ Error al actualizar pip"
@@ -38,14 +38,14 @@ if [ ! -d "venv" ]; then
     }
 else
     # Activar entorno virtual existente
-    source venv/bin/activate
+    source .venv/bin/activate
 fi
 
 APP_PID_FILE="app.pid"
 
 echo "🚀 Iniciando la aplicación..."
 # Iniciar la aplicación en segundo plano
-python3 app.py &
+python app.py &
 
 
 # Guardar el PID del proceso

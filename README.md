@@ -19,7 +19,7 @@ Aplicación web para gestión de tickets de soporte técnico, desarrollada con F
 - JavaScript
 
 ## Requisitos
-- Python 3.8+
+- Python 3.10+
 - Bibliotecas en requirements.txt
 
 ## Instalación
@@ -27,8 +27,8 @@ Aplicación web para gestión de tickets de soporte técnico, desarrollada con F
 2. Crear entorno virtual
 3. Instalar dependencias
 ```bash
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -42,10 +42,3 @@ Las contribuciones son bienvenidas. Por favor, lee las guías de contribución a
 
 ## Licencia
 [Especificar licencia]
-<<<<<<< HEAD
-<<<<<<< HEAD
-# AppWeb-Ticket
-=======
->>>>>>> 3122f6b (Mejoras en generación de informes: filtros y gráficos de estados de tickets)
-=======
->>>>>>> 85de314 (Preparación para subir a GitHub: actualización de README, .gitignore y requirements.txt)
