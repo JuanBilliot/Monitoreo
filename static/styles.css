@@ -2983,6 +2983,11 @@ select[name="sla_resolution"] option[value="Esperando Aprobación"] {
     color: white;
 }
 
+.tag.agent-karpilovsky-ivan {
+    background-color: #72b3c4; /* Color personalizado */
+    color: white;
+}
+
 .tag.agent-merodio-omar {
     background-color: #e8a27a; /* Color personalizado */
     color: white;

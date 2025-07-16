@@ -568,6 +568,7 @@ def collaborator_class_filter(collaborator):
         'sommiercenter leandro rognoni': 'rognoni-leandro',
         'sommiercenter nicolas macia': 'macia-nicolas',
         'sommiercenter david gonzalez': 'gonzalez-david',
+        'sommiercenter ivan karpilovsky': 'karpilovsky-ivan',
         'sommiercenter omar merodio': 'merodio-omar' 
     }
     if collaborator:
@@ -598,6 +599,7 @@ def agent_class_filter(agent):
         'sommiercenter leandro rognoni': 'rognoni-leandro',
         'sommiercenter nicolas macia': 'macia-nicolas',
         'sommiercenter david gonzalez': 'gonzalez-david',
+        'sommiercenter ivan karpilovsky': 'karpilovsky-ivan',
         'sommiercenter omar merodio': 'merodio-omar'  # Nuevo agente
     }
     if agent:
