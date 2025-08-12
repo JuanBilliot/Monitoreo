@@ -28,6 +28,7 @@
     --sla-pausado-color: #fbbf24;      /* Amarillo */
     --sla-esperando-aprobacion-color: #F39C12; /* Naranja suave */
     --derivado-color: #dd6aca;    /* Verde */
+    --cancelado-color: #4dcfd8;    /* Verde */
 }
 
 /* General */
@@ -241,6 +242,10 @@ body {
     font-weight: bold;
 }
 
+.status.Cancelado {
+    color: var(--purple-color);
+    font-weight: bold;
+}
 .sla.correcto {
     color: var(--sla-correcto-color);
     background-color: #d1fae5;
@@ -399,6 +404,9 @@ body {
     background-color: #8b5cf6; /* Púrpura */
 }
 
+.kanban-column-header.Cancelado {
+    background-color: #35b5db; /* Púrpura */
+}
 /* Tarjeta de ticket */
 .kanban-card {
     background-color: var(--white);
@@ -941,6 +949,10 @@ body {
 }
 
 .status.Solucionado {
+    background-color: var(--purple-color); 
+    color: white; 
+}
+.status.Cancelado {
     background-color: var(--purple-color); 
     color: white; 
 }
@@ -1780,6 +1792,10 @@ select[name="sla_resolution"] option[value="Esperando Aprobación"] {
     background-color: var(--derivado-color); 
     color: white; 
 }
+.tag.estado-cancelado { 
+    background-color: var(--cancelado-color); 
+    color: white; 
+}
 
 .tag.sla-correcto {
     background-color: var(--verde-correcto);
@@ -2055,6 +2071,11 @@ select[name="sla_resolution"] option[value="Esperando Aprobación"] {
     color: black;
 }
 
+.status-filter option[value="Cancelado"] {
+    background-color: var(--cancelado-color);
+    color: black;
+}
+
 .status-filter option[value="En Proceso"] {
     background-color: var(--azuljuan-color);
     color: white;
@@ -2178,6 +2199,11 @@ select[name="sla_resolution"] option[value="Esperando Aprobación"] {
 
 .custom-filter-options .tag.estado-derivado {
     background-color: var(--yellow-color);
+    color: black;
+}
+
+.custom-filter-options .tag.estado-cancelado {
+    background-color: var(--cancelado-color);
     color: black;
 }
 
