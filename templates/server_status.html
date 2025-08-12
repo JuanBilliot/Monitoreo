@@ -677,14 +677,15 @@ function updateStatsUI(monitor, data, service) {
         
         // Asegurar que los valores numéricos sean válidos
         const stats = data.stats || {};
-        const currentLatency = parseFloat(data.current_latency || data.latency || -1);
-        const packetLoss = Math.min(100, Math.max(0, parseFloat(data.loss || data.packet_loss || (stats.loss_percentage !== undefined ? stats.loss_percentage : 100))));
+        // Asegurar que todos los valores numéricos tengan un formato consistente con 2 decimales
+        const currentLatency = parseFloat(parseFloat(data.current_latency || data.latency || -1).toFixed(2));
+        const packetLoss = parseFloat(Math.min(100, Math.max(0, parseFloat(data.loss || data.packet_loss || (stats.loss_percentage !== undefined ? stats.loss_percentage : 100)))).toFixed(2));
         const totalPings = parseInt(stats.total_pings || 0, 10);
         const successfulPings = parseInt(stats.successful_pings || 0, 10);
         const failedPings = parseInt(stats.failed_pings || 0, 10);
-        const avgLatency = parseFloat(stats.avg_latency || stats.avg || 0);
-        const minLatency = parseFloat(stats.min_latency || stats.min || 0);
-        const maxLatency = parseFloat(stats.max_latency || stats.max || 0);
+        const avgLatency = parseFloat(parseFloat(stats.avg_latency || stats.avg || 0).toFixed(2));
+        const minLatency = parseFloat(parseFloat(stats.min_latency || stats.min || 0).toFixed(2));
+        const maxLatency = parseFloat(parseFloat(stats.max_latency || stats.max || 0).toFixed(2));
         
         // Obtener el ID único del servicio (combinación de ID del servidor y tipo de servicio)
         const serverId = monitor.closest('.server-card')?.dataset?.id;
@@ -815,7 +816,7 @@ function updateStatsUI(monitor, data, service) {
             
             // Actualizar contador de paquetes perdidos
             if (!isNaN(lostPackets) && isFinite(lostPackets)) {
-                packetLossElement.textContent = lostPackets;
+                packetLossElement.textContent = lostPackets.toFixed(0);
             } else {
                 packetLossElement.textContent = '0';
             }

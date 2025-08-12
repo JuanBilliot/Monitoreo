@@ -1423,6 +1423,11 @@ select[name="sla_resolution"] option[value="Esperando Aprobación"] {
     color: white;
 }
 
+.tag.agent-karpilovsky-ivan {
+    background-color: #72b3c4; /* Color personalizado */
+    color: white;
+}
+
 .tag.agent-gonzalez-david {
     background-color: #4dac55; /* Color personalizado */
     color: white;
@@ -3228,6 +3233,10 @@ select[name="sla_resolution"] option[value="Esperando Aprobación"] {
     color: white;
 }
 
+.tag.collaborator.collaborator-karpilovsky-ivan {
+    background-color: #72b3c4; /* Color personalizado */
+    color: white;
+}
 /* Estilo por defecto para colaboradores no definidos */
 .tag.collaborator {
     background-color: #95a5a6; /* Gris neutro */
