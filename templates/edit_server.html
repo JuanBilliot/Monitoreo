@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <!-- Sidebar -->
+    {% include 'sidebar.html' %}
+
+    <div class="row" style="margin-top: 20px;">
+        <div class="col-md-8 offset-md-2"> <!-- Ajusta el ancho de la tarjeta -->
+            <div class="card-edit-server">
+                <div class="card-header">
+                    <h2>Sucursal: {{ server['branch'] }}</h2>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        <div class="form-group">
+                            <label for="branch">Sucursal:</label>
+                            <input type="text" class="form-control" id="branch" name="branch" value="{{ server['branch'] }}" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="branch_code">Código de Sucursal:</label>
+                            <input type="text" class="form-control" id="branch_code" name="branch_code" value="{{ server['branch_code'] }}" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="dyndns">DynDNS:</label>
+                            <input type="text" class="form-control" id="dyndns" name="dyndns" value="{{ server['dyndns'] }}">
+                        </div>
+                        <div class="form-group">
+                            <label for="primary_service_provider">Proveedor Principal:</label>
+                            <input type="text" class="form-control" id="primary_service_provider" name="primary_service_provider" value="{{ server['primary_service_provider'] }}">
+                        </div>
+                        <div class="form-group">
+                            <label for="primary_service_ip">IP Principal:</label>
+                            <input type="text" class="form-control" id="primary_service_ip" name="primary_service_ip" value="{{ server['primary_service_ip'] }}">
+                        </div>
+                        <div class="form-group">
+                            <label for="primary_service_speed">Velocidad Principal:</label>
+                            <input type="text" class="form-control" id="primary_service_speed" name="primary_service_speed" value="{{ server['primary_service_speed'] }}">
+                        </div>
+                        <div class="form-group">
+                            <label for="secondary_service_provider">Proveedor Secundario:</label>
+                            <input type="text" class="form-control" id="secondary_service_provider" name="secondary_service_provider" value="{{ server['secondary_service_provider'] }}">
+                        </div>
+                        <div class="form-group">
+                            <label for="secondary_service_ip">IP Secundaria:</label>
+                            <input type="text" class="form-control" id="secondary_service_ip" name="secondary_service_ip" value="{{ server['secondary_service_ip'] }}">
+                        </div>
+                        <div class="form-group">
+                            <label for="secondary_service_speed">Velocidad Secundaria:</label>
+                            <input type="text" class="form-control" id="secondary_service_speed" name="secondary_service_speed" value="{{ server['secondary_service_speed'] }}">
+                        </div>
+                        <div class="button-group">
+                            <button type="submit" class="btn btn-primary">Actualizar Servidor</button>
+                            <a href="{{ url_for('index') }}" class="btn btn-secondary">Cancelar</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

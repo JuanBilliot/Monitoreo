@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <!-- Sidebar -->
+    {% include 'sidebar.html' %}
+
+    <!-- Contenido Principal -->
+    <div class="main-content">
+        <div class="dashboard-header">
+            <h1>Dashboard de Tickets</h1>
+            <div class="current-date">{{ current_datetime.split()[0] }}</div>
+        </div>
+
+        <!-- Dashboard Cards -->
+        <div class="dashboard-cards">
+            <!-- Total de Tickets -->
+            <div class="dashboard-card total-tickets">
+                <div class="card-icon"><i class="fas fa-ticket-alt"></i></div>
+                <div class="card-title">Tickets</div>
+                <div class="card-value">{{ total_tickets }}</div>
+            </div>
+
+            <!-- Tickets por Estado -->
+            <div class="dashboard-card tickets-by-status">
+                <div class="card-icon"><i class="fas fa-chart-pie"></i></div>
+                <div class="card-title">Cerrados</div>
+                <div class="card-value">
+                    {{ closed_tickets }}
+                </div>
+            </div>
+
+            <!-- Tickets Derivados (antes Resueltos) -->
+            <div class="dashboard-card derived-tickets">
+                <div class="card-icon"><i class="fas fa-check-circle"></i></div>
+                <div class="card-title">Derivados</div>
+                <div class="card-value">
+                    {{ derived_tickets }}
+                </div>
+            </div>
+
+            <!-- SLA Excedido -->
+            <div class="dashboard-card sla-exceeded">
+                <div class="card-icon"><i class="fas fa-clock"></i></div>
+                <div class="card-title">% SLA</div>
+                <div class="card-value">
+                    {% set total_sla = sla_exceeded_json|safe %}
+                    {% set avg_sla = total_sla.values|average if total_sla.values else 0 %}
+                    {{ "%.2f"|format(avg_sla) }}%
+                </div>
+                {{ '' }}
+            </div>
+
+            <!-- Tickets Abiertos -->
+            <div class="dashboard-card open-tickets">
+                <div class="card-icon"><i class="fas fa-folder-open"></i></div>
+                <div class="card-title">Abiertos</div>
+                <div class="card-value">{{ open_tickets_count }}</div>
+            </div>
+        </div>
+
+        <!-- Gráficos existentes -->
+        <div class="charts-container">
+            <div class="chart-row">
+                <div class="chart-card">
+                    <h3>Tickets por Estado</h3>
+                    <canvas id="statusChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3>% SLA Excedido por Mes</h3>
+                    <canvas id="slaExceededChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-row">
+                <div class="chart-card">
+                    <h3>% SLA Excedido por Agente</h3>
+                    <canvas id="agentExceededChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3>Tickets Recientes</h3>
+                    <table class="recent-tickets-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Número</th>
+                                <th>Fecha</th>
+                                <th>Agente</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for ticket in recent_tickets %}
+                            <tr>
+                                <td>{{ ticket[0] }}</td>
+                                <td>{{ ticket[1] }}</td>
+                                <td>{{ ticket[2] }}</td>
+                                <td>{{ ticket[3] }}</td>
+                                <td><span class="tag estado-{{ ticket[4]|lower|replace(' ', '-') }}">{{ ticket[4] }}</span></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Script para eliminar servidores -->
+        <script>
+            document.querySelectorAll('.delete-server').forEach(button => {
+                button.addEventListener('click', function() {
+                    const serverId = this.getAttribute('data-id');
+                    if (confirm('¿Estás seguro de que deseas eliminar este servidor?')) {
+                        fetch(`/delete_server/${serverId}`, {
+                            method: 'POST'
+                        })
+                        .then(response => {
+                            if (response.ok) {
+                                location.reload();  // Recargar la página para ver los cambios
+                            } else {
+                                alert('Error al eliminar el servidor.');
+                            }
+                        });
+                    }
+                });
+            });
+        </script>
+        
+    </div>
+</div>
+
+<script>
+    // Gráficos existentes
+    const statusData = JSON.parse('{{ tickets_by_status_json | safe }}');
+    const slaExceededData = JSON.parse('{{ sla_exceeded_json | safe }}');
+    const agentExceededData = JSON.parse('{{ agent_exceeded_json | safe }}');
+
+    // Gráfico de Tickets por Estado
+    new Chart(document.getElementById('statusChart'), {
+        type: 'pie',
+        data: {
+            labels: statusData.labels,
+            datasets: [{
+                data: statusData.values,
+                backgroundColor: ['#34d399', '#60a5fa', '#f87171', '#a78bfa', '#fbbf24']
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            layout: {
+                padding: 10
+            },
+            plugins: {
+                legend: {
+                    position: 'right', 
+                    labels: {
+                        boxWidth: 15, 
+                        font: {
+                            size: 10 
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Gráfico de % SLA Excedido por Mes
+    new Chart(document.getElementById('slaExceededChart'), {
+        type: 'bar',
+        data: {
+            labels: slaExceededData.labels,
+            datasets: [{
+                data: slaExceededData.values,
+                backgroundColor: '#60a5fa'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            layout: {
+                padding: 10
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 100,
+                    title: {
+                        display: true,
+                        text: '% SLA Total',
+                        font: {
+                            size: 10
+                        }
+                    },
+                    ticks: {
+                        font: {
+                            size: 10
+                        }
+                    }
+                },
+                x: {
+                    ticks: {
+                        font: {
+                            size: 10
+                        }
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: false
+                }
+            }
+        }
+    });
+
+    // Gráfico de % SLA Excedido por Agente
+    new Chart(document.getElementById('agentExceededChart'), {
+        type: 'pie',
+        data: {
+            labels: agentExceededData.labels,
+            datasets: [{
+                data: agentExceededData.values,
+                backgroundColor: ['#34d399', '#60a5fa', '#f87171', '#a78bfa', '#fbbf24']
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            layout: {
+                padding: 10
+            },
+            plugins: {
+                legend: {
+                    position: 'right', 
+                    labels: {
+                        boxWidth: 15, 
+                        font: {
+                            size: 10 
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Depuración de SLA
+    console.log('SLA Exceeded JSON:', slaExceededData);
+    
+    // Usar directamente el primer valor
+    const avgSla = slaExceededData.values[0] || 0;
+    
+    console.log('SLA Average:', avgSla);
+
+    // Tarjeta de SLA
+    const slaCard = document.querySelector('.sla-exceeded .card-value');
+    if (slaCard) {
+        slaCard.textContent = avgSla.toFixed(2) + '%';
+    }
+
+    // Función para manejar ping de servidores
+    document.querySelectorAll('.ping-server').forEach(button => {
+        button.addEventListener('click', function() {
+            const ip = this.getAttribute('data-ip');
+            fetch('/ping_server', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `ip=${ip}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                const modalBody = document.querySelector('.ping-result-body');
+                modalBody.innerHTML = `<pre>${data.result || data.error}</pre>`;
+                $('#pingResultModal').modal('show');
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        });
+    });
+    
+</script>
+{% endblock %}

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cargar BD</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+
+</head>
+<body>
+    <div class="container">
+        <!-- Menú Lateral -->
+        {% include 'sidebar.html' %}
+
+
+        <!-- Contenido Principal -->
+        <main class="main-content">
+            <div class="upload-container">
+                <h1>Subir Base de Datos</h1>
+
+                <!-- Mensaje flash -->
+                {% with messages = get_flashed_messages() %}
+                    {% if messages %}
+                        <ul class="flash-messages">
+                            {% for message in messages %}
+                                <li>{{ message }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% endif %}
+                {% endwith %}
+
+                <!-- Formulario de carga de archivo -->
+                <form action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data" class="upload-form">
+                    <label class="file-input-label" for="file">Seleccione un archivo Excel:</label>
+                    <input type="file" name="file" id="file" accept=".xlsx,.xls" class="file-input">
+                    <button type="submit" class="upload-button">Cargar</button>
+                </form>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

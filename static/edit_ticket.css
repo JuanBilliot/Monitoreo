@@ -1,0 +1,381 @@
+/* Variables de color actualizadas */
+:root {
+    --primary-gradient: linear-gradient(135deg, #1a1c2e, #2a2d4f);
+    --secondary-gradient: linear-gradient(135deg, #24899b, #47adcc);
+    --accent-gradient: linear-gradient(135deg, #47adcc, #60a5fa);
+    --card-bg: rgba(255, 255, 255, 0.95);
+    --input-bg: #f8fafc;
+    --input-border: #e2e8f0;
+    --input-focus: #47adcc;
+    --text-primary: #1e293b;
+    --text-secondary: #64748b;
+    --success: #10b981;
+    --danger: #ef4444;
+    --shadow-sm: 0 2px 4px rgba(0,0,0,0.1);
+    --shadow-md: 0 4px 6px rgba(0,0,0,0.1);
+    --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+    --white: #ffffff;
+    --primary-color: #1e293b;
+    --accent-color: #47adcc;
+}
+
+/* Estilos generales */
+body {
+    background: var(--primary-gradient);
+    font-family: 'Inter', sans-serif;
+    color: var(--text-primary);
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.container {
+    display: flex;
+    height: 100vh;
+}
+
+.main-content {
+    flex: 1;
+    margin-left: 250px;
+    background: var(--primary-gradient);
+    height: 100vh;
+    overflow: hidden;
+    padding: 2rem 3rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.form-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    height: calc(100vh - 4rem);
+    max-width: 1800px;
+    width: 100%;
+    margin: 1.5rem auto;
+    padding: 1.5rem;
+    background: white;
+    border-radius: 24px;
+    box-shadow: var(--shadow-lg);
+}
+
+/* Header */
+.ticket-header {
+    text-align: center;
+    margin: 0.5rem 0 1.5rem 0;
+    position: relative;
+}
+
+.ticket-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--accent-gradient);
+    color: white;
+    padding: 0.6rem 2rem;
+    border-radius: 50px;
+    font-size: 1rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow-md);
+}
+
+.ticket-link:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+/* Layout principal */
+.main-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(300px, 1fr)) minmax(400px, 2fr);
+    gap: 1.5rem;
+    flex: 1;
+    min-height: 0;
+    padding: 0 1rem;
+}
+
+/* Tarjetas */
+.card {
+    background: var(--card-bg);
+    border-radius: 16px;
+    padding: 1.5rem;
+    box-shadow: var(--shadow-md);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-height: 100%;
+    overflow: hidden;
+    border: 1px solid rgba(71, 173, 204, 0.15);
+    transition: all 0.2s ease;
+}
+
+.card:hover {
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-2px);
+    border-color: rgba(71, 173, 204, 0.3);
+}
+
+.card h3 {
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid rgba(71, 173, 204, 0.2);
+}
+
+.card h3 i {
+    color: #47adcc;
+    font-size: 1rem;
+}
+
+/* Formulario */
+.form-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.form-group {
+    margin: 0;
+}
+
+.form-group label {
+    display: block;
+    color: var(--text-secondary);
+    margin-bottom: 0.2rem;
+    font-weight: 500;
+    font-size: 0.8rem;
+}
+
+/* Inputs */
+.form-control {
+    width: 100%;
+    padding: 0.3rem 0.5rem;
+    border: 1px solid var(--input-border);
+    border-radius: 4px;
+    background-color: var(--input-bg);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+}
+
+select.form-control {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2347adcc' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.3rem center;
+    background-size: 0.8rem;
+    padding-right: 1.8rem;
+}
+
+input[name="close_date"],
+input[name="creation_date"] {
+    cursor: pointer;
+    user-select: none;
+    background-color: #f9fafb;
+    border: 1px solid #d1d5db;
+    color: #374151;
+}
+
+input[name="delay"] {
+    cursor: default;
+    color: rgba(0,0,0,0.5);
+}
+
+/* Campo de nuevo usuario */
+#new-user-input {
+    display: none;
+    margin-top: 0.3rem;
+}
+
+#new-user-input.visible {
+    display: block;
+}
+
+/* Detalles */
+.details-section {
+    grid-column: 4 / 5;
+    display: flex;
+    flex-direction: column;
+}
+
+.details-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.details-card textarea {
+    flex: 1;
+    resize: none;
+    min-height: 0;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    padding: 0.75rem;
+}
+
+/* Botones */
+.form-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+    padding: 1.5rem;
+    margin: 1rem 1rem 0 1rem;
+    background: rgba(255,255,255,0.05);
+    border-radius: 16px;
+    border: 1px solid rgba(71, 173, 204, 0.15);
+}
+
+.btn-save,
+.btn-delete {
+    padding: 0.75rem 2rem;
+    border: none;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.3s ease;
+    min-width: 160px;
+    justify-content: center;
+}
+
+.btn-save {
+    background: var(--accent-gradient);
+    color: white;
+    border: 1px solid transparent;
+}
+
+.btn-save:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+    background: linear-gradient(45deg, #47adcc, #4785cc);
+}
+
+.btn-delete {
+    background: transparent;
+    color: var(--danger);
+    border: 1px solid var(--danger);
+}
+
+.btn-delete:hover {
+    background: var(--danger);
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+/* Estilos personalizados para Flatpickr */
+.flatpickr-calendar {
+    background-color: var(--white);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    width: 260px !important; /* Reducir ancho */
+    max-width: 260px !important;
+}
+
+.flatpickr-months {
+    height: 40px; /* Reducir altura del encabezado */
+}
+
+.flatpickr-month {
+    height: 40px;
+}
+
+.flatpickr-weekdays {
+    height: 30px; /* Reducir altura de los días de la semana */
+}
+
+.flatpickr-weekday {
+    font-size: 0.8em; /* Reducir tamaño de texto de días */
+}
+
+.flatpickr-day {
+    color: var(--primary-color);
+    transition: all 0.2s ease;
+    width: 32px; /* Reducir tamaño de los días */
+    height: 32px;
+    line-height: 32px;
+    font-size: 0.9em; /* Reducir tamaño de fuente */
+}
+
+.flatpickr-day.selected {
+    background-color: var(--accent-color);
+    color: var(--white);
+}
+
+.flatpickr-day:hover {
+    background-color: var(--accent-color);
+    color: var(--white);
+    opacity: 0.8;
+}
+
+/* Centrar el calendario */
+.flatpickr-calendar.arrowTop:before,
+.flatpickr-calendar.arrowTop:after {
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+}
+
+/* Responsive */
+@media (max-width: 1600px) {
+    .main-grid {
+        grid-template-columns: repeat(2, minmax(300px, 1fr)) minmax(400px, 2fr);
+    }
+    
+    .details-section {
+        grid-column: 3 / 4;
+    }
+    
+    .form-container {
+        margin: 1rem auto;
+    }
+    
+    .main-content {
+        padding: 1.5rem 2.5rem;
+    }
+}
+
+@media (max-width: 1200px) {
+    .main-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .details-section {
+        grid-column: 1 / -1;
+    }
+    
+    .main-content {
+        padding: 1.25rem 2rem;
+    }
+}
+
+@media (max-width: 768px) {
+    .main-content {
+        margin-left: 0;
+        padding: 1rem 1.5rem;
+    }
+    
+    .form-container {
+        margin: 0.75rem auto;
+    }
+    
+    .form-actions {
+        flex-direction: column;
+    }
+    
+    .btn-save,
+    .btn-delete {
+        width: 100%;
+    }
+}

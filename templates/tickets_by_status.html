@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kanban</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="main-content">
+        <h1>Tablero Kanban</h1>
+
+        <!-- Filtro de Estado -->
+        <div class="filter-container">
+            <label for="status-filter">Filtrar por Estado:</label>
+            <select id="status-filter" onchange="filterKanban()">
+                <option value="">Todos</option>
+                {% for status in statuses %}
+                    <option value="{{ status }}" {% if status == selected_status %}selected{% endif %}>
+                        {{ status }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="kanban-container">
+            {% if tickets %}
+                {% for status, tickets in tickets.items() %}
+                    <div class="kanban-column">
+                        <div class="kanban-column-header {{ status | lower }}">
+                            <span>{{ status }}</span> <span>{{ tickets|length }}</span>
+                        </div>
+                        {% for ticket in tickets %}
+                            <div class="kanban-card" onclick="location.href='/edit_ticket/{{ ticket[0] }}';">
+                                <span class="fecha-creacion fecha-{{ status | lower }}">{{ ticket[2] }}</span>
+                                <p><strong>Ticket #{{ ticket[1] }}</strong></p>
+                                <p>{{ ticket[10] or 'Sin detalles' }}</p> <!-- Mostrar detalle del billete -->
+                            </div>
+                        {% endfor %}
+                        <div class="add-ticket" onclick="location.href='/new_ticket';">+ Agregar registro</div>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <p>No hay tickets para mostrar.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Botón de regreso -->
+    <br>
+    <a href="{{ url_for('index') }}">Regresar a la página principal</a>
+
+    <!-- Script para el filtro -->
+    <script>
+        function filterKanban() {
+            const selectedStatus = document.getElementById('status-filter').value;
+            const url = selectedStatus ? `/kanban?status=${selectedStatus}` : '/kanban';
+            window.location.href = url;
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+# Entornos virtuales
+venv/
+env/
+.venv/
+
+# Archivos de Python compilados
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Archivos de base de datos
+*.db
+*.db.backup
+
+# Archivos de respaldo
+*.bak
+*.backup
+
+# Archivos de sistema
+.DS_Store
+.vscode/

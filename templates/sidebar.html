@@ -1,0 +1,17 @@
+<aside class="sidebar">
+    <h2>Gestión de Tickets</h2>
+    <nav>
+        <ul>
+            <li><a href="{{ url_for('index') }}"><i class="fas fa-tachometer-alt"></i> Dashboard</a></li>
+            <li><a href="{{ url_for('show_tickets') }}"><i class="fas fa-list"></i> Mostrar Tickets</a></li>
+            <li><a href="{{ url_for('upload') }}"><i class="fas fa-upload"></i> Cargar BD</a></li>
+            <li><a href="{{ url_for('new_ticket') }}"><i class="fas fa-plus-circle"></i> Ingreso de Ticket</a></li>
+            <li><a href="{{ url_for('kanban') }}"><i class="fas fa-columns"></i> Kanban</a></li>
+            <li><a href="{{ url_for('generate_report') }}"><i class="fas fa-chart-bar"></i> Generar Informe</a></li>
+            <li><a href="{{ url_for('server_status') }}"><i class="fas fa-server"></i> Estados de Servidores</a></li>
+        </ul>
+    </nav>
+    <div class="sidebar-settings">
+        <a href="{{ url_for('settings') }}" class="settings-link"><i class="fas fa-cog"></i> Configuraciones</a>
+    </div>
+</aside>

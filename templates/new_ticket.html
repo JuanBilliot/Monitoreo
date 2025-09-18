@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ingreso de Ticket Manual</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+
+</head>
+<body>
+    <div class="sidebar-trigger"></div>
+
+    <div class="container">
+        <!-- Menú Lateral -->
+        {% include 'sidebar.html' %}
+
+
+        <!-- Contenido Principal -->
+        <main class="main-content">
+            <div class="form-container">
+                <h2>Ingreso de Ticket Manual</h2>
+
+                <form method="POST" action="/new_ticket">
+                    <div class="form-group">
+                        <label for="ticket_number">Número de Ticket</label>
+                        <input type="text" id="ticket_number" name="ticket_number" placeholder="Ingrese el número de ticket" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="creation_date">Fecha de Creación</label>
+                        <input type="date" id="creation_date" name="creation_date" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="agent">Agente</label>
+                        <input type="text" id="agent" name="agent" placeholder="Ingrese el nombre del agente">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="status">Estado</label>
+                        <select id="status" name="status">
+                            <option value="Abierto">Abierto</option>
+                            <option value="Cerrado">Cerrado</option>
+                            <option value="Derivado">Derivado</option>
+                            <!-- Agrega más opciones de estado según sea necesario -->
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="collaborators">Colaboradores</label>
+                        <input type="text" id="collaborators" name="collaborators" placeholder="Ingrese colaboradores">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="first_response">SLA de Primera Respuesta</label>
+                        <select id="first_response" name="first_response">
+                            <option value="Correcto">Correcto</option>
+                            <option value="Excedido">Excedido</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="sla_resolution">SLA de Resolución</label>
+                        <select id="sla_resolution" name="sla_resolution">
+                            <option value="Correcto">Correcto</option>
+                            <option value="Excedido">Excedido</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="close_date">Fecha de Cierre</label>
+                        <input type="date" id="close_date" name="close_date">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="delay">Demora</label>
+                        <input type="text" id="delay" name="delay" placeholder="Calculado automáticamente" readonly>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="user">Usuario</label>
+                        <input type="text" id="user" name="user" placeholder="Ingrese el usuario">
+                    </div>
+
+                    <div class="details-section">
+                        <div class="card details-card">
+                            <h3><i class="fas fa-file-alt"></i> Detalles del Ticket</h3>
+                            <div class="form-row">
+                                <textarea name="details" class="form-control"></textarea>
+                            </div>
+                        </div>
+                        <div class="card branch-section">
+                            <h3><i class="fas fa-building"></i> Sucursal</h3>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <select name="branch" id="branch-select" class="form-control">
+                                        {% for branch in branches %}
+                                            <option value="{{ branch }}">{{ branch }}</option>
+                                        {% endfor %}
+                                        <option value="new">+ Nueva Sucursal</option>
+                                    </select>
+                                    <input type="text" name="new_branch" id="new-branch-input" placeholder="Nombre de la sucursal" class="form-control" style="display: none;">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit">Ingresar Ticket</button>
+                </form>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Función para mostrar/ocultar input de nueva sucursal
+        function toggleNewBranchInput() {
+            const branchSelect = document.getElementById('branch-select');
+            const newBranchInput = document.getElementById('new-branch-input');
+            
+            if (!branchSelect || !newBranchInput) {
+                console.error('No se encontraron elementos necesarios');
+                return;
+            }
+
+            if (branchSelect.value === 'new') {
+                newBranchInput.style.display = 'block';
+                newBranchInput.required = true;
+                newBranchInput.focus(); // Enfocar el input para mejor UX
+            } else {
+                newBranchInput.style.display = 'none';
+                newBranchInput.required = false;
+                newBranchInput.value = ''; // Limpiar el input
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const branchSelect = document.getElementById('branch-select');
+            const newBranchInput = document.getElementById('new-branch-input');
+
+            if (!branchSelect || !newBranchInput) {
+                console.error('No se encontraron elementos para nueva sucursal');
+                return;
+            }
+
+            // Ocultar input de nueva sucursal por defecto
+            newBranchInput.style.display = 'none';
+
+            // Agregar event listener para cambios en el select
+            branchSelect.addEventListener('change', toggleNewBranchInput);
+        });
+    </script>
+</body>
+</html>

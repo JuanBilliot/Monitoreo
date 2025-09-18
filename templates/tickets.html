@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="es"> <!-- Cambiar el idioma a español -->
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lista de Tickets</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <!-- Font Awesome para los íconos -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <!-- Eliminar o comentar el bloque de estilos en línea que sobrescribe .tag.date -->
+    <!--
+    <style>
+        .tag.date {
+            background-color: #e74c3c;
+            color: white;
+        }
+        /* Otros estilos que puedan interferir */
+    </style>
+    -->
+</head>
+<body>
+    <div class="sidebar-trigger"></div>
+
+    <div class="container">
+        {% include "sidebar.html" %}
+
+        <!-- Contenido Principal -->
+        <main class="main-content">
+            <!-- Encabezado: Título, Barra de búsqueda y Paginación -->
+            <div class="header-container">
+                <!-- Título -->
+                <h1 class="header-title">Lista de Tickets</h1>
+
+                <!-- Barra de búsqueda -->
+                <form action="/search_tickets" method="get" class="search-container">
+                    <div class="search-box">
+                        <button class="search-button" type="submit">
+                            <i class="fas fa-search"></i>
+                        </button>
+                        <input type="text" name="query" placeholder="Buscar tickets por agente, estado, usuario...">
+                    </div>
+                </form>
+
+                <!-- Paginación -->
+                <div class="pagination">
+                    {% if page > 1 %}
+                    <a href="{{ url_for('show_tickets', page=page-1) }}" class="prev">Atrás</a>
+                    {% else %}
+                    <span class="disabled prev">Atrás</span>
+                    {% endif %}
+
+                    {% for p in range(max(1, page-2), min(total_pages+1, page+3)) %}
+                    <a href="{{ url_for('show_tickets', page=p) }}" class="{% if p == page %}active{% endif %}">{{ p }}</a>
+                    {% endfor %}
+
+                    {% if page < total_pages %}
+                    <a href="{{ url_for('show_tickets', page=page+1) }}" class="next">Siguiente</a>
+                    {% else %}
+                    <span class="disabled next">Siguiente</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Tabla de Tickets -->
+            <table class="ticket-table airtable-style">
+                <thead>
+                    <tr>
+                        <th>Ticket</th>
+                        <th>Fecha de Creación</th>
+                        <th>
+                            Agente
+                            <div class="filter-dropdown">
+                                <button class="filter-btn"><i class="fas fa-filter"></i></button>
+                                <div class="dropdown-content">
+                                    <select class="agent-filter" multiple>
+                                        {% set unique_agents = tickets|map(attribute=3)|unique|list %}
+                                        {% for agent in unique_agents %}
+                                            <option value="{{ agent }}">{{ agent }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <div class="dropdown-actions">
+                                        <button class="apply-filter">Aplicar</button>
+                                        <button class="clear-filter">Limpiar</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </th>
+                        <th>
+                            Estado
+                            <div class="filter-dropdown">
+                                <button class="filter-btn"><i class="fas fa-filter"></i></button>
+                                <div class="dropdown-content">
+                                    <select class="status-filter" multiple>
+                                        {% set unique_statuses = tickets|map(attribute=4)|unique|list %}
+                                        {% for status in unique_statuses %}
+                                            <option value="{{ status }}">{{ status }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <div class="dropdown-actions">
+                                        <button class="apply-filter">Aplicar</button>
+                                        <button class="clear-filter">Limpiar</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </th>
+                        <th>Colaboradores</th>
+                        <th>
+                            SLA de Primera Respuesta
+                            <div class="filter-dropdown">
+                                <button class="filter-btn"><i class="fas fa-filter"></i></button>
+                                <div class="dropdown-content">
+                                    <select class="first-response-sla-filter" multiple>
+                                        {% set unique_first_response_slas = tickets|map(attribute=6)|unique|list %}
+                                        {% for sla in unique_first_response_slas %}
+                                            <option value="{{ sla }}">{{ sla }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <div class="dropdown-actions">
+                                        <button class="apply-filter">Aplicar</button>
+                                        <button class="clear-filter">Limpiar</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </th>
+                        <th>
+                            SLA de Resolución
+                            <div class="filter-dropdown">
+                                <button class="filter-btn"><i class="fas fa-filter"></i></button>
+                                <div class="dropdown-content">
+                                    <select class="resolution-sla-filter" multiple>
+                                        {% set unique_resolution_slas = tickets|map(attribute=7)|unique|list %}
+                                        {% for sla in unique_resolution_slas %}
+                                            <option value="{{ sla }}">{{ sla }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <div class="dropdown-actions">
+                                        <button class="apply-filter">Aplicar</button>
+                                        <button class="clear-filter">Limpiar</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </th>
+                        <th>Fecha de Cierre</th>
+                        <th>Demora</th>
+                        <th>Usuario</th>
+                    </tr>
+                </thead>
+                <tbody id="ticketTableBody">
+                    {% for ticket in tickets %}
+                    <tr onclick="location.href='/edit_ticket/{{ ticket[0] }}';">
+                        <td><span class="tag ticket-number">{{ ticket[1] }}</span></td>
+                        <td>
+                            <span class="tag {{ ticket[2]|date_class }}">{{ ticket[2]|default('Sin fecha') }}</span>
+                        </td>
+                        <td>
+                            <span class="tag agent-{{ ticket[3]|agent_class }}">{{ ticket[3] }}</span>
+                        </td>
+                        <td>
+                            <span class="tag estado-{{ ticket[4]|lower|replace(' ', '-') }}">{{ ticket[4] }}</span>
+                        </td>
+                        <td>
+                            {% if ticket[5] %}
+                                <div class="tag td collaborators">
+                                    {% set collaborator_list = ticket[5].split(';') %}
+                                    {% for collaborator in collaborator_list %}
+                                    <span class="tag collaborator collaborator-{{ collaborator|collaborator_class }}">{{ collaborator.strip() }}</span>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <span class="tag collaborator" data-empty="true">Sin colaboradores</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="tag sla-{{ 
+                                'correcto' if ticket[6] == 'Correcto' else 
+                                'excedido' if ticket[6] == 'Excedido' else 
+                                'corriendo' if ticket[6] == 'Corriendo' else 
+                                'pausado' if ticket[6] == 'Pausado' else 
+                                'esperando-aprobacion' if ticket[6] == 'Esperando Aprobación' else 
+                                'default'
+                            }}">{{ ticket[6] }}</span>
+                        </td>
+                        <td>
+                            <span class="tag sla-{{ 
+                                'correcto' if ticket[7] == 'Correcto' else 
+                                'excedido' if ticket[7] == 'Excedido' else 
+                                'corriendo' if ticket[7] == 'Corriendo' else 
+                                'pausado' if ticket[7] == 'Pausado' else 
+                                'esperando-aprobacion' if ticket[7] == 'Esperando Aprobación' else 
+                                'default'
+                            }}">{{ ticket[7] }}</span>
+                        </td>
+                        <td>
+                            <span class="tag {{ ticket[8]|date_class }}">{{ ticket[8]|default('Sin cierre') }}</span>
+                        </td>
+                        <td>
+                            {% if ticket[9] == None or ticket[9] == '' or ticket[9] == 'None' %}
+                                <span class="tag delay-normal">0 días</span>
+                            {% else %}
+                                {% set delay_text = ticket[9]|string %}
+                                {% if 'días' not in delay_text %}
+                                    {% set delay_text = delay_text + ' días' %}
+                                {% endif %}
+                                {% set delay_value = delay_text.replace(' días', '') | int %}
+                                {% if delay_value <= 1 %}
+                                    {% set delay_class = 'delay-normal' %}
+                                {% elif delay_value <= 5 %}
+                                    {% set delay_class = 'delay-warning' %}
+                                {% elif delay_value > 30 %}
+                                    {% set delay_class = 'delay-super-critical' %}    
+                                {% elif delay_value <= 10 %}
+                                    {% set delay_class = 'delay-danger' %}
+                                {% else %}
+                                    {% set delay_class = 'delay-critical' %}    
+                                {% endif %}
+                                <span class="tag {{ delay_class }}">
+                                    {{ delay_text }}
+                                </span>
+                            {% endif %}
+                        </td>                                              
+                        <td><span class="tag user">{{ ticket[10]|default('None') }}</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </main>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('Inicializando filtros de tickets');
+        const filterDropdowns = document.querySelectorAll('.filter-dropdown');
+        console.log(`Número de dropdowns encontrados: ${filterDropdowns.length}`);
+
+        // Mapeo de colores para diferentes tipos de filtros
+        const COLOR_MAPPINGS = {
+            'status': {
+                'Cerrado': 'estado-cerrado',
+                'Abierto': 'estado-abierto',
+                'Derivado': 'estado-derivado',
+                'En Proceso': 'estado-en-proceso',
+                'Pendiente': 'estado-pendiente',
+                'Resuelto': 'estado-resuelto'
+            },
+            'first-response-sla': {
+                'En Tiempo': 'sla-en-tiempo',
+                'Excedido': 'sla-excedido'
+            },
+            'resolution-sla': {
+                'En Tiempo': 'sla-en-tiempo',
+                'Excedido': 'sla-excedido'
+            },
+            'agent': {
+                'Juan': 'agent-juan',
+                'Maria': 'agent-maria',
+                'Carlos': 'agent-carlos',
+                'Pedro': 'agent-pedro',
+                'Ulariaga, Braian': 'agent-ulariaga',
+                'Perez, Juan': 'agent-perez',
+                'Gonzalez, Maria': 'agent-gonzalez'
+            },
+            'collaborators': {
+                'Soporte': 'collaborator-soporte',
+                'Desarrollo': 'collaborator-desarrollo',
+                'Operaciones': 'collaborator-operaciones',
+                'Mesa de Ayuda': 'collaborator-mesa-ayuda',
+                'Infraestructura': 'collaborator-infraestructura'
+            }
+        };
+
+        function getColorClass(value, filterType) {
+            const filterMap = COLOR_MAPPINGS[filterType] || {};
+            
+            // Primero buscar coincidencia exacta
+            if (filterMap[value]) return filterMap[value];
+            
+            // Luego buscar coincidencias parciales
+            for (let key in filterMap) {
+                if (value.toLowerCase().includes(key.toLowerCase())) {
+                    return filterMap[key];
+                }
+            }
+            
+            // Generar un color único basado en el nombre
+            function generateColorFromName(name) {
+                let hash = 0;
+                for (let i = 0; i < name.length; i++) {
+                    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+                }
+                
+                const hue = hash % 360;
+                return `hsl(${hue}, 70%, 50%)`;
+            }
+
+            // Color personalizado basado en el nombre
+            const customColor = generateColorFromName(value);
+            
+            // Crear una clase dinámica para el color
+            const dynamicClassName = `dynamic-color-${value.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+            
+            // Agregar estilo dinámico
+            const styleElement = document.createElement('style');
+            styleElement.textContent = `
+                .${dynamicClassName} {
+                    background-color: ${customColor} !important;
+                    color: white !important;
+                }
+            `;
+            document.head.appendChild(styleElement);
+            
+            return dynamicClassName;
+        }
+
+        function getColumnIndex(filterType) {
+            console.log(`Buscando índice para tipo de filtro: ${filterType}`);
+            const headers = document.querySelectorAll('.ticket-table thead th');
+            console.log('Número de encabezados:', headers.length);
+            
+            const filterTypeMap = {
+                'status': ['Estado', 'estado'],
+                'first-response-sla': ['SLA Primera Respuesta', 'SLA de Primera Respuesta', 'Primera Respuesta'],
+                'resolution-sla': ['SLA Resolución', 'SLA de Resolución', 'Resolución'],
+                'agent': ['Agente', 'agente'],
+                'collaborators': ['Colaboradores', 'colaboradores']
+            };
+
+            const searchTerms = filterTypeMap[filterType] || [filterType];
+
+            for (let i = 0; i < headers.length; i++) {
+                // Limpiar el texto del encabezado
+                const headerText = headers[i].textContent
+                    .trim()
+                    .replace(/\s+/g, ' ')
+                    .toLowerCase();
+
+                console.log(`Comparando con encabezado: "${headerText}"`);
+                
+                // Verificar si alguno de los términos de búsqueda coincide
+                const matchFound = searchTerms.some(term => 
+                    headerText.includes(term.toLowerCase())
+                );
+
+                if (matchFound) {
+                    console.log(`Índice de columna encontrado: ${i}`);
+                    return i;
+                }
+            }
+            
+            console.error('No se encontró el índice de columna');
+            return -1;
+        }
+
+        function applyFilter(filterType, selectedValues) {
+            console.log('Aplicando filtro');
+            console.log(`Tipo de filtro: ${filterType}`);
+            console.log('Valores seleccionados:', selectedValues);
+
+            const columnIndex = getColumnIndex(filterType);
+            console.log(`Índice de columna: ${columnIndex}`);
+
+            if (columnIndex === -1) {
+                console.error('No se puede aplicar filtro: índice de columna inválido');
+                return;
+            }
+
+            const rows = document.querySelectorAll('.ticket-table tbody tr');
+            console.log(`Número de filas: ${rows.length}`);
+
+            rows.forEach((row, index) => {
+                // Verificar si la celda existe
+                if (!row.cells[columnIndex]) {
+                    console.warn(`Fila ${index} no tiene celdas en el índice ${columnIndex}`);
+                    return;
+                }
+                
+                // Buscar el elemento con el valor, no solo .tag
+                const cellElements = row.cells[columnIndex].querySelectorAll('.tag, [data-filter-value]');
+                
+                if (cellElements.length === 0) {
+                    console.warn(`Fila ${index} no tiene elementos de filtro en la columna ${columnIndex}`);
+                    return;
+                }
+                
+                // Obtener el valor de filtro
+                const cellValue = Array.from(cellElements)
+                    .map(el => (el.dataset.filterValue || el.textContent).trim())
+                    .find(val => val);
+
+                console.log(`Fila ${index}, valor de celda: ${cellValue}`);
+                
+                if (selectedValues.length === 0 || selectedValues.includes(cellValue)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+
+        function createCustomFilterDropdown(dropdown) {
+            console.log('Creando dropdown personalizado');
+            const selectElement = dropdown.querySelector('select');
+            const filterType = selectElement.classList[0].replace('-filter', '');
+            const dropdownContent = dropdown.querySelector('.dropdown-content');
+
+            const container = document.createElement('div');
+            container.className = 'custom-filter-container';
+
+            // Contenedor de opciones
+            const optionsContainer = document.createElement('div');
+            optionsContainer.className = 'custom-filter-options';
+
+            // Botones de acción
+            const actionContainer = document.createElement('div');
+            actionContainer.className = 'dropdown-actions';
+
+            const applyBtn = document.createElement('button');
+            applyBtn.textContent = 'Aplicar';
+            applyBtn.className = 'apply-filter';
+
+            const clearBtn = document.createElement('button');
+            clearBtn.textContent = 'Limpiar';
+            clearBtn.className = 'clear-filter';
+
+            // Crear opciones personalizadas
+            Array.from(selectElement.options).forEach(option => {
+                if (option.value) {
+                    const optionElement = document.createElement('div');
+                    const colorClass = getColorClass(option.value, filterType);
+                    optionElement.className = `tag ${colorClass}`;
+                    optionElement.textContent = option.value;
+                    optionElement.dataset.value = option.value;
+
+                    optionElement.addEventListener('click', function() {
+                        this.classList.toggle('selected');
+                    });
+
+                    optionsContainer.appendChild(optionElement);
+                }
+            });
+
+            actionContainer.appendChild(applyBtn);
+            actionContainer.appendChild(clearBtn);
+
+            container.appendChild(optionsContainer);
+            container.appendChild(actionContainer);
+
+            // Eventos de botones
+            applyBtn.addEventListener('click', function() {
+                const selectedOptions = optionsContainer.querySelectorAll('.selected');
+                const selectedValues = Array.from(selectedOptions).map(el => el.dataset.value);
+
+                applyFilter(filterType, selectedValues);
+                
+                // Cerrar dropdown
+                dropdownContent.classList.remove('active');
+            });
+
+            clearBtn.addEventListener('click', function() {
+                optionsContainer.querySelectorAll('.tag').forEach(el => {
+                    el.classList.remove('selected');
+                });
+
+                applyFilter(filterType, []);
+                
+                // Cerrar dropdown
+                dropdownContent.classList.remove('active');
+            });
+
+            return container;
+        }
+
+        // Configurar cada dropdown
+        filterDropdowns.forEach(dropdown => {
+            const filterBtn = dropdown.querySelector('.filter-btn');
+            const dropdownContent = dropdown.querySelector('.dropdown-content');
+
+            console.log('Configurando dropdown');
+
+            // Reemplazar contenido del dropdown
+            const customDropdown = createCustomFilterDropdown(dropdown);
+            dropdownContent.innerHTML = '';
+            dropdownContent.appendChild(customDropdown);
+
+            // Evento para abrir/cerrar dropdown
+            filterBtn.addEventListener('click', function(event) {
+                event.stopPropagation();
+                dropdownContent.classList.toggle('active');
+            });
+
+            // Cerrar al hacer clic fuera
+            document.addEventListener('click', function(event) {
+                if (!dropdown.contains(event.target)) {
+                    dropdownContent.classList.remove('active');
+                }
+            });
+        });
+    });
+    </script>
+</body>
+</html>
