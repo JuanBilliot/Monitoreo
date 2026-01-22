@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session, g, jsonify
 from flask_sse import sse
 import sqlite3
+from flask_cors import CORS
 import pandas as pd
 import matplotlib
 matplotlib.use('Agg')  # Usar backend 'Agg' para entornos sin GUI
@@ -160,6 +161,7 @@ def ping(host, timeout=10):
         return None, 'error'
 
 app = Flask(__name__)
+CORS(app) # Habilitar CORS para todas las rutas
 app.secret_key = 'tu_clave_secreta_segura_y_unica_para_sesiones_2024'  # Clave secreta para sesiones
 
 # Inicializar SSE
@@ -798,62 +800,339 @@ def index():
     sla_exceeded_summary = c.fetchone()
 
     print("\n--- VERIFICACIÓN DE SLA ---")
-    print(f"Total de tickets: {sla_exceeded_summary[0]}")
-    print(f"Tickets con SLA Excedido: {sla_exceeded_summary[1]}")
-    print(f"Porcentaje de SLA Excedido: {sla_exceeded_summary[2]}%")
-    print("--- FIN DE VERIFICACIÓN ---\n")
 
-    # Validar datos para "% SLA Excedidos"
-    sla_exceeded_data = {
-        "labels": ["Total"],
-        "values": [float(sla_exceeded_summary[2]) if sla_exceeded_summary[2] is not None else 0.0]
-    }
-    print("\n--- DEBUG SLA EXCEEDED DATA ---")
-    print(f"SLA Exceeded Data: {sla_exceeded_data}")
-    print(f"SLA Exceeded Summary: {sla_exceeded_summary}")
-    print("--- END DEBUG ---\n")
-
-    # % SLA Excedido por Agente (Último Mes)
-    c.execute("""
-        SELECT agent, 
-               ROUND((SUM(CASE WHEN sla_resolution = 'Excedido' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS percent_exceeded
-        FROM tickets
-        WHERE creation_date >= date('now', '-1 month')
-        GROUP BY agent
-    """)
-    agent_exceeded_summary = c.fetchall()
-
-    # Validar datos para "% SLA Excedido por Agente"
-    agent_exceeded_data = {
-        "labels": [row[0] if row[0] else "Desconocido" for row in agent_exceeded_summary],
-        "values": [row[1] if row[1] is not None else 0 for row in agent_exceeded_summary]
-    }
-
+# --- NUEVAS RUTAS API PARA REACT ---
+@app.route('/api/dashboard/stats')
+def api_dashboard_stats():
+    conn = get_db()
+    c = conn.cursor()
     
-    # NUEVA SECCIÓN: Obtener servidores
-    c.execute("SELECT id, branch, branch_code, dyndns, primary_service_provider, primary_service_ip, primary_service_speed, secondary_service_provider, secondary_service_ip, secondary_service_speed FROM servers")
-    servers = [dict(zip([column[0] for column in c.description], row)) for row in c.fetchall()]
+    # Obtener estados y contadores (Lógica similar a index)
+    c.execute("SELECT status, COUNT(*) FROM tickets GROUP BY status")
+    counts = dict(c.fetchall())
+    
+    total = sum(counts.values())
+    
+    # SLA General
+    c.execute("""
+        SELECT 
+            COUNT(*) as total_tickets,
+            COUNT(CASE WHEN sla_resolution = 'Excedido' THEN 1 END) as excedidos
+        FROM tickets
+    """)
+    sla_row = c.fetchone()
+    sla_percent = (sla_row[1] * 100.0 / sla_row[0]) if sla_row[0] > 0 else 0
 
+    # Actividad Reciente (Últimos 5 creados)
+    c.execute("SELECT ticket_number, user, creation_date, status FROM tickets ORDER BY id DESC LIMIT 5")
+    recent_created = [{"type": "new", "ticket": r[0], "user": r[1], "date": r[2], "status": r[3]} for r in c.fetchall()]
+
+    # Estadísticas por Sucursal (Top 5)
+    c.execute("SELECT branch, COUNT(*) as count FROM tickets WHERE branch IS NOT NULL AND branch != '' GROUP BY branch ORDER BY count DESC LIMIT 5")
+    branch_stats = [{"name": r[0], "count": r[1]} for r in c.fetchall()]
+
+    return jsonify({
+        "total_tickets": total,
+        "closed_tickets": counts.get('Cerrado', 0),
+        "open_tickets": counts.get('Abierto', 0),
+        "derived_tickets": counts.get('Derivado', 0),
+        "pending_tickets": counts.get('Pendiente', 0),
+        "sla_exceeded_percent": round(sla_percent, 2),
+        "recent_activity": recent_created,
+        "branch_stats": branch_stats
+    })
+
+@app.route('/api/tickets')
+def api_get_tickets():
+    conn = get_db()
+    c = conn.cursor()
+    # Usamos CAST para asegurar orden numérico si ticket_number es texto
+    c.execute("SELECT * FROM tickets ORDER BY CAST(ticket_number AS INTEGER) DESC")
+    columns = [column[0] for column in c.description]
+    tickets = [dict(zip(columns, row)) for row in c.fetchall()]
     conn.close()
+    return jsonify(tickets)
 
-    # Fecha y hora actual
-    current_datetime = datetime.now().strftime("%d/%m/%Y")
-    return render_template(
-        'index.html',
-        tickets_by_status=tickets_by_status.items(),
-        recent_tickets=recent_tickets,
-        open_tickets=open_tickets,
-        total_tickets=total_tickets,
-        closed_tickets=closed_tickets if closed_tickets else 0,
-        derived_tickets=derived_tickets if derived_tickets else 0,
-        pending_tickets=pending_tickets if pending_tickets else 0,
-        open_tickets_count=open_tickets_count if open_tickets_count else 0,
-        current_datetime=current_datetime,
-        tickets_by_status_json=json.dumps(tickets_by_status_data),  # Gráfico "Tickets por Estado"
-        sla_exceeded_json=json.dumps(sla_exceeded_data),      # Gráfico "% SLA Excedidos"
-        agent_exceeded_json=json.dumps(agent_exceeded_data),   # Gráfico "% SLA Excedido por Agente"
-        servers=servers  # NUEVO PARÁMETRO para servidores
-    )
+@app.route('/api/tickets/upload', methods=['POST'])
+def api_upload_tickets():
+    if 'file' not in request.files:
+        return jsonify({"status": "error", "message": "No se recibió archivo"}), 400
+    
+    file = request.files['file']
+    if not file or not file.filename.endswith(('.xlsx', '.xls')):
+        return jsonify({"status": "error", "message": "Formato de archivo inválido"}), 400
+
+    try:
+        data = pd.read_excel(file)
+        conn = get_db()
+        c = conn.cursor()
+        new_count = 0
+
+        for _, row in data.iterrows():
+            ticket_number = row.get('Ticket')
+            if not ticket_number: continue
+
+            # Verificar si existe para no duplicar
+            c.execute("SELECT 1 FROM tickets WHERE ticket_number = ?", (ticket_number,))
+            if not c.fetchone():
+                creation_date = row.get('Fecha de creacion')
+                agent_raw = str(row.get('Agente', ''))
+                status = row.get('Estado')
+                collaborators = row.get('Colaboradores')
+                first_response = row.get('Primera Respuesta')
+                sla_resolution = row.get('SLA de resolucion')
+                close_date = row.get('Fecha de cierre')
+                
+                # Lógica de extracción de Usuario y Sucursal
+                user = row.get('Usuario')
+                branch = row.get('Sucursal', '')
+                agent = agent_raw
+
+                # Si el campo Agente trae la info del cliente (formato "| Sucursal, Usuario")
+                if '|' in agent_raw:
+                    parts = agent_raw.split('|')
+                    if len(parts) > 1:
+                        info = parts[1].split(',')
+                        if len(info) > 1:
+                            if not branch or pd.isna(branch):
+                                branch = info[0].strip()
+                            if not user or pd.isna(user):
+                                user = info[1].strip()
+                    agent = "S/A" # Opcional: podrías poner "Sistema" o dejarlo vacío si es info de usuario
+
+                # Asegurar que no sean NaN para la DB
+                user = str(user) if user and not pd.isna(user) else ''
+                branch = str(branch) if branch and not pd.isna(branch) else ''
+                agent = str(agent) if agent and not pd.isna(agent) else ''
+
+                priority = row.get('Prioridad', 'Normal')
+                
+                # Cálculo de demora
+                delay = '0 días'
+                if close_date and creation_date:
+                    try:
+                        if isinstance(creation_date, str) and isinstance(close_date, str):
+                            creation = datetime.strptime(creation_date, "%d/%m/%Y")
+                            close = datetime.strptime(close_date, "%d/%m/%Y")
+                            delay = f"{(close - creation).days} días"
+                        elif hasattr(creation_date, 'year') and hasattr(close_date, 'year'):
+                            delay = f"{(close_date - creation_date).days} días"
+                    except:
+                        delay = str(row.get('Demora', '0 días'))
+
+                c.execute('''
+                    INSERT INTO tickets (ticket_number, creation_date, agent, status, collaborators, 
+                    first_response, sla_resolution, close_date, delay, user, details, branch, priority)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (ticket_number, str(creation_date), agent, status, collaborators, 
+                     first_response, sla_resolution, str(close_date), delay, user, "", branch, priority))
+                new_count += 1
+
+        conn.commit()
+        conn.close()
+        return jsonify({
+            "status": "success", 
+            "message": f"Se procesaron los datos. {new_count} nuevos tickets agregados.",
+            "new_tickets": new_count
+        })
+    except Exception as e:
+        if 'conn' in locals(): conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/api/agents')
+def api_get_agents():
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT DISTINCT agent FROM tickets WHERE agent IS NOT NULL AND agent != '' ORDER BY agent")
+    agents = [r[0] for r in c.fetchall()]
+    conn.close()
+    return jsonify(agents)
+
+@app.route('/api/users')
+def api_get_users():
+    conn = get_db()
+    c = conn.cursor()
+    # Fetch from both tickets and users table
+    c.execute("SELECT DISTINCT user FROM tickets WHERE user IS NOT NULL AND user != ''")
+    users_tickets = [r[0] for r in c.fetchall()]
+    c.execute("SELECT name FROM users")
+    users_table = [r[0] for r in c.fetchall()]
+    all_users = sorted(list(set(users_tickets + users_table)))
+    conn.close()
+    return jsonify(all_users)
+
+@app.route('/api/branches')
+def api_get_branches():
+    conn = get_db()
+    c = conn.cursor()
+    # Fetch from both tickets and branches table
+    c.execute("SELECT DISTINCT branch FROM tickets WHERE branch IS NOT NULL AND branch != ''")
+    branches_tickets = [r[0] for r in c.fetchall()]
+    c.execute("SELECT name FROM branches")
+    branches_table = [r[0] for r in c.fetchall()]
+    all_branches = sorted(list(set(branches_tickets + branches_table)))
+    conn.close()
+    return jsonify(all_branches)
+
+@app.route('/api/tickets/<int:ticket_id>', methods=['PUT'])
+def api_update_ticket(ticket_id):
+    data = request.json
+    if not data:
+        return jsonify({"status": "error", "message": "No se recibieron datos"}), 400
+    
+    conn = get_db()
+    c = conn.cursor()
+    
+    try:
+        creation_date = data.get('creation_date')
+        close_date = data.get('close_date')
+        delay = data.get('delay', '0 días')
+
+        # Recalcular demora si hay fechas disponibles
+        if creation_date and close_date and close_date != 'None' and close_date != '':
+            try:
+                # Intentar varios formatos de fecha comunes
+                for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+                    try:
+                        c_dt = datetime.strptime(str(creation_date).split(' ')[0], fmt)
+                        cl_dt = datetime.strptime(str(close_date).split(' ')[0], fmt)
+                        diff = (cl_dt - c_dt).days
+                        delay = f"{diff} días"
+                        break
+                    except ValueError:
+                        continue
+            except Exception as e:
+                print(f"Error calculando demora: {e}")
+
+        # Asegurar que la sucursal y el usuario existan en sus tablas
+        branch = data.get('branch')
+        if branch:
+            c.execute("SELECT 1 FROM branches WHERE name = ?", (branch,))
+            if not c.fetchone():
+                c.execute("INSERT INTO branches (name) VALUES (?)", (branch,))
+        
+        user = data.get('user')
+        if user:
+            c.execute("SELECT 1 FROM users WHERE name = ?", (user,))
+            if not c.fetchone():
+                c.execute("INSERT INTO users (name) VALUES (?)", (user,))
+
+        # Actualizar los campos principales
+        c.execute("""
+            UPDATE tickets 
+            SET creation_date = ?, agent = ?, status = ?, collaborators = ?, 
+                first_response = ?, sla_resolution = ?, close_date = ?, 
+                delay = ?, user = ?, details = ?, branch = ?
+            WHERE id = ?
+        """, (
+            str(creation_date),
+            data.get('agent'),
+            data.get('status'),
+            data.get('collaborators'),
+            data.get('first_response'),
+            data.get('sla_resolution'),
+            str(close_date),
+            delay,
+            user,
+            data.get('details'),
+            branch,
+            ticket_id
+        ))
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "success", "message": "Ticket actualizado correctamente", "delay": delay})
+    except Exception as e:
+        if 'conn' in locals(): conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/api/servers', methods=['GET'])
+def api_get_servers():
+    try:
+        servers = get_servers()
+        # Enriquecer con datos de cache si existen
+        for server in servers:
+            ip = server.get('primary_service_ip')
+            if ip and ip in ping_cache.data:
+                server['monitoring'] = ping_cache.data[ip]
+        return jsonify(servers)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/api/servers', methods=['POST'])
+def api_add_server():
+    data = request.json
+    if not data:
+        return jsonify({"status": "error", "message": "No se recibieron datos"}), 400
+    
+    conn = get_db()
+    c = conn.cursor()
+    try:
+        branch_name = data.get('branch')
+        if branch_name:
+            c.execute("SELECT 1 FROM branches WHERE name = ?", (branch_name,))
+            if not c.fetchone():
+                c.execute("INSERT INTO branches (name) VALUES (?)", (branch_name,))
+        
+        c.execute('''INSERT INTO servers (branch, branch_code, dyndns, primary_service_provider, 
+                      primary_service_ip, primary_service_speed, secondary_service_provider, 
+                      secondary_service_ip, secondary_service_speed) 
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
+                  (branch_name, data.get('branch_code'), data.get('dyndns', ''), 
+                   data.get('primary_service_provider'), data.get('primary_service_ip'), 
+                   data.get('primary_service_speed'), data.get('secondary_service_provider', ''), 
+                   data.get('secondary_service_ip', ''), data.get('secondary_service_speed', '')))
+        conn.commit()
+        return jsonify({"status": "success", "message": "Servidor agregado correctamente"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route('/api/servers/<int:server_id>', methods=['PUT', 'DELETE'])
+def api_server_detail(server_id):
+    conn = get_db()
+    c = conn.cursor()
+    try:
+        if request.method == 'PUT':
+            data = request.json
+            c.execute('''UPDATE servers 
+                         SET branch=?, branch_code=?, dyndns=?, primary_service_provider=?, primary_service_ip=?, 
+                             primary_service_speed=?, secondary_service_provider=?, secondary_service_ip=?, 
+                             secondary_service_speed=?
+                         WHERE id=?''', 
+                      (data.get('branch'), data.get('branch_code'), data.get('dyndns'), 
+                       data.get('primary_service_provider'), data.get('primary_service_ip'), 
+                       data.get('primary_service_speed'), data.get('secondary_service_provider'), 
+                       data.get('secondary_service_ip'), data.get('secondary_service_speed'), server_id))
+            conn.commit()
+            return jsonify({"status": "success", "message": "Servidor actualizado"})
+        
+        elif request.method == 'DELETE':
+            c.execute("DELETE FROM servers WHERE id = ?", (server_id,))
+            conn.commit()
+            return jsonify({"status": "success", "message": "Servidor eliminado"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route('/api/servers/status', methods=['GET'])
+def api_servers_status():
+    # Retornar el estado actual de la caché de pings
+    with ping_cache.lock:
+        return jsonify(ping_cache.data)
+
+@app.route('/api/servers/monitor/start-all', methods=['POST'])
+def api_monitor_start_all():
+    servers = get_servers()
+    count = 0
+    for server in servers:
+        for key in ['primary_service_ip', 'secondary_service_ip']:
+            ip = server.get(key)
+            if ip and is_valid_ip(ip) and ip not in monitoring_threads:
+                start_monitor(ip)
+                count += 1
+    return jsonify({"status": "success", "message": f"Iniciado monitoreo para {count} servicios"})
 
 @app.route('/tickets')
 def show_tickets():
@@ -1642,11 +1921,28 @@ def ping_server_route():
                         "output": str(result)
                     })
             else:
+                msg = "Fallo de conexión"
+                out = ""
+                if isinstance(result, dict):
+                    msg = result.get("message", msg)
+                    out = result.get("output", "")
+                
+                # Simplificación agresiva: una o dos palabras máximo
+                out_lower = out.lower()
+                if "tiempo de espera agotado" in out_lower or "timed out" in out_lower:
+                    msg = "Sin respuesta (Timeout)"
+                elif "unreachable" in out_lower or "inalcanzable" in out_lower:
+                    msg = "Red Inalcanzable"
+                elif "find host" in out_lower or "host no" in out_lower:
+                    msg = "IP No Encontrada"
+                elif "invalid" in out_lower:
+                    msg = "IP Inválida"
+                
                 response.update({
                     "status": "error",
-                    "message": str(result),
+                    "message": msg,
                     "latency": None,
-                    "output": str(result)
+                    "output": out
                 })
             
             return jsonify(response)

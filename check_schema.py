@@ -1,0 +1,8 @@
+
+import sqlite3
+conn = sqlite3.connect('tickets.db')
+c = conn.cursor()
+c.execute("PRAGMA table_info(tickets)")
+for row in c.fetchall():
+    print(row)
+conn.close()
