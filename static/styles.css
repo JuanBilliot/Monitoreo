@@ -1436,7 +1436,7 @@ select[name="sla_resolution"] option[value="Esperando Aprobación"] {
 }
 
 .tag.agent-karpilovsky-ivan {
-    background-color: #72b3c4; /* Color personalizado */
+    background-color: #add03a; /* Verde claro unificado */
     color: white;
 }
 
@@ -1695,6 +1695,42 @@ select[name="sla_resolution"] option[value="Esperando Aprobación"] {
     color: white;
 }
 
+/* Estilos para Mauro Arbelo  */
+.tag.agent-arbelo-mauro {
+    background-color: #29932c; /* Color personalizado */
+    color: white;
+}
+
+.tag.collaborator.collaborator-arbelo-mauro {
+    background-color: #29932c; /* Color personalizado */
+    color: white;
+}
+
+/* Estilos para Ivan Karpilovsky - Todas las variantes de nombre */
+.tag.agent-karpilovsky-ivan,
+.tag.collaborator.collaborator-karpilovsky-ivan,
+.tag.collaborator.collaborator-ivan-karpilovsky,
+/* Manejo de formato con comas */
+.tag.collaborator[class*='karpilovsky, ivan'],
+.tag.collaborator[class*='karpilovsky,ivan'],
+/* Cualquier variante que contenga 'karpilovsky' */
+.tag.collaborator[class*='karpilovsky'],
+.tag.agent[class*='karpilovsky'],
+/* Estilo para el formato específico que aparece en la interfaz */
+.tag.collaborator[title='Karpilovsky Ivan'],
+.tag.collaborator[title='karpilovsky ivan'],
+.tag.collaborator[title*='Karpilovsky'],
+.tag.collaborator[title*='karpilovsky'],
+/* Selector de mayor especificidad para la tabla de tickets */
+.ticket-table .tag.collaborator[title*='Karpilovsky'],
+.ticket-table .tag.collaborator[title*='karpilovsky'],
+.ticket-table .tag.collaborator[class*='karpilovsky'],
+/* Selector de emergencia para cualquier texto que contenga 'karpilovsky' */
+.tag:contains('Karpilovsky'),
+.tag:contains('karpilovsky') {
+    background-color: #add03a; /* Verde claro unificado */
+    color: white;
+}
 /* Estilos específicos para calendario emergente de selección de fecha */
 .form-container input[type="date"] {
     appearance: none;
@@ -3015,7 +3051,7 @@ select[name="sla_resolution"] option[value="Esperando Aprobación"] {
 }
 
 .tag.agent-karpilovsky-ivan {
-    background-color: #d48dc5; /* Color personalizado */
+    background-color: #add03a; /* Verde claro unificado */
     color: white;
 }
 
@@ -3260,7 +3296,7 @@ select[name="sla_resolution"] option[value="Esperando Aprobación"] {
 }
 
 .tag.collaborator.collaborator-karpilovsky-ivan {
-    background-color: #72b3c4; /* Color personalizado */
+    background-color: #add03a; /* Verde claro unificado */
     color: white;
 }
 /* Estilo por defecto para colaboradores no definidos */

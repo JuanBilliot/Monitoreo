@@ -593,17 +593,47 @@ def collaborator_class_filter(collaborator):
         'sommiercenter nicolas macia': 'macia-nicolas',
         'sommiercenter david gonzalez': 'gonzalez-david',
         'sommiercenter ivan karpilovsky': 'karpilovsky-ivan',
-        'sommiercenter omar merodio': 'merodio-omar' 
+        'karpilovsky ivan': 'karpilovsky-ivan',  # Formato sin SommierCenter
+        'karpilovsky, ivan': 'karpilovsky-ivan',  # Formato con coma
+        'ivan karpilovsky': 'karpilovsky-ivan',   # Formato nombre primero
+        'sommiercenter, ivan karpilovsky': 'karpilovsky-ivan',  # Formato con coma después de SommierCenter
+        'sommiercenter omar merodio': 'merodio-omar',
+        'sommiercenter mauro arbelo': 'arbelo-mauro'
     }
-    if collaborator:
-        normalized_collaborator = (
-            collaborator.lower()
-            .replace('|', '')
-            .replace(',', '')
-            .replace('  ', ' ')
-            .strip()
-        )
-        return collaborator_colors.get(normalized_collaborator, 'collaborator-default')
+    
+    if not collaborator or not collaborator.strip():
+        return 'collaborator-default'
+        
+    # Normalizar el nombre del colaborador
+    normalized = collaborator.lower().strip()
+    
+    # Manejar el caso específico de 'karpilovsky ivan' sin importar el formato
+    if 'karpilovsky' in normalized and 'ivan' in normalized:
+        return 'karpilovsky-ivan'
+        
+    # Eliminar 'sommiercenter' si está presente para hacer coincidir mejor
+    normalized = normalized.replace('sommiercenter', '').strip()
+    
+    # Si después de eliminar 'sommiercenter' queda 'ivan karpilovsky' o similar
+    if 'karpilovsky' in normalized and 'ivan' in normalized:
+        return 'karpilovsky-ivan'
+    
+    # Eliminar caracteres especiales y espacios extras
+    normalized = re.sub(r'[^\w\s]', '', normalized)  # Elimina todo lo que no sea letra o espacio
+    normalized = re.sub(r'\s+', ' ', normalized).strip()  # Normaliza espacios
+    
+    # Si el nombre está en el diccionario, devolver la clase correspondiente
+    if normalized in collaborator_colors:
+        return collaborator_colors[normalized]
+    
+    # Si no está, intentar con formato inverso (apellido, nombre)
+    parts = normalized.split()
+    if len(parts) == 2:
+        inverted = f"{parts[1]} {parts[0]}"
+        if inverted in collaborator_colors:
+            return collaborator_colors[inverted]
+    
+    # Si aún no se encontró, devolver la clase por defecto
     return 'collaborator-default'
 
 
@@ -618,23 +648,48 @@ def agent_class_filter(agent):
         'sommiercenter juan billiot': 'billiot-juan',
         'machado gabriel': 'machado-gabriel',
         'phicoms soporte técnico': 'phicoms',
+        'karpilovsky ivan': 'karpilovsky-ivan',
+        'ivan karpilovsky': 'karpilovsky-ivan',
+        'karpilovsky, ivan': 'karpilovsky-ivan',
         'fabre camila': 'fabre-camila',
         'sommiercenter claudio marini': 'marini-claudio',
         'sommiercenter leandro rognoni': 'rognoni-leandro',
         'sommiercenter nicolas macia': 'macia-nicolas',
         'sommiercenter david gonzalez': 'gonzalez-david',
         'sommiercenter ivan karpilovsky': 'karpilovsky-ivan',
-        'sommiercenter omar merodio': 'merodio-omar'  # Nuevo agente
+        'sommiercenter omar merodio': 'merodio-omar',
+        'sommiercenter mauro arbelo': 'arbelo-mauro',  # Nuevo agente
     }
-    if agent:
-        normalized_agent = (
-            agent.lower()
-            .replace('|', '')  # Elimina '|'
-            .replace(',', '')  # Elimina comas
-            .replace('  ', ' ')  # Reemplaza dobles espacios
-            .strip()  # Elimina espacios en blanco
-        )
-        return agent_colors.get(normalized_agent, 'agent-default')
+    if not agent or not agent.strip():
+        return 'agent-default'
+        
+    # Normalizar el nombre del agente
+    normalized = agent.lower().strip()
+    
+    # Si el nombre está en el diccionario exactamente como está, devolver la clase correspondiente
+    if normalized in agent_colors:
+        return agent_colors[normalized]
+    
+    # Si el nombre comienza con |, intentar sin el |
+    if normalized.startswith('|'):
+        clean_name = normalized[1:].strip()
+        if clean_name in agent_colors:
+            return agent_colors[clean_name]
+    
+    # Si el nombre contiene 'sommiercenter', intentar extraer solo el nombre
+    if 'sommiercenter' in normalized:
+        # Eliminar 'sommiercenter' y cualquier coma o espacio
+        clean_name = re.sub(r'sommiercenter[,\s]*', '', normalized).strip()
+        if clean_name in agent_colors:
+            return agent_colors[clean_name]
+    
+    # Buscar cualquier coincidencia parcial con el nombre
+    for name, color in agent_colors.items():
+        # Si el nombre normalizado contiene el nombre del agente (sin importar el orden)
+        if all(part in normalized for part in name.split()):
+            return color
+    
+    # Si no se encontró ninguna coincidencia, devolver la clase por defecto
     return 'agent-default'
 
 # Función para obtener color de agente
