@@ -23,3 +23,5 @@ __pycache__/
 # Scripts de ejecución local
 *.bat
 *.sh
+
+.env.email

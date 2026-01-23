@@ -1059,10 +1059,10 @@ function App() {
         );
       case 'tickets':
         if (viewMode === 'view' && selectedTicket) {
-          return TicketDetailView({ ticket: selectedTicket, onEdit: () => setViewMode('edit'), onBack: () => { setViewMode('list'); setSelectedTicket(null); } });
+          return <TicketDetailView ticket={selectedTicket} onEdit={() => setViewMode('edit')} onBack={() => { setViewMode('list'); setSelectedTicket(null); }} />;
         }
         if (viewMode === 'edit' && selectedTicket) {
-          return TicketEditView({ ticket: selectedTicket, onSave: handleSaveTicket, onBack: () => setViewMode('view') });
+          return <TicketEditView ticket={selectedTicket} onSave={handleSaveTicket} onBack={() => setViewMode('view')} />;
         }
         return (
           <div className="panel" style={{ padding: '2rem' }}>
